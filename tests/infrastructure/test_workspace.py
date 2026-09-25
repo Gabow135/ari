@@ -13,6 +13,17 @@ def root(tmp_path):
     return tmp_path
 
 
+def _link_dir(target, link):
+    """Symlink a directory; on Windows without symlink privilege, use a junction."""
+    try:
+        os.symlink(str(target), str(link), target_is_directory=True)
+    except OSError:
+        if os.name != "nt":
+            raise
+        import _winapi
+        _winapi.CreateJunction(str(target), str(link))
+
+
 def test_resolve_accepts_inside_root(root):
     ws = Workspace(str(root))
     got = ws.resolve("proj/sub", default_dir=str(root / "proj"))
@@ -39,7 +50,7 @@ def test_resolve_rejects_absolute_escape(root):
 def test_resolve_rejects_symlink_escape(root):
     ws = Workspace(str(root / "proj"))
     link = root / "proj" / "escape"
-    os.symlink(str(root / "outside"), str(link))
+    _link_dir(root / "outside", link)
     with pytest.raises(ValueError):
         ws.resolve("escape", default_dir=str(root / "proj"))
 
@@ -56,6 +67,6 @@ async def test_create_branch_rejects_symlink_escape(root):
     """A symlink inside the root pointing outside must be rejected before git runs."""
     ws = Workspace(str(root / "proj"))
     link = root / "proj" / "escape_link"
-    os.symlink(str(root / "outside"), str(link))
+    _link_dir(root / "outside", link)
     with pytest.raises(ValueError):
         await ws.create_branch(str(link), "x")

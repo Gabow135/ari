@@ -3,6 +3,7 @@ import json
 import logging
 
 from ari.domain.agent.message import Message
+from ari.infrastructure.claude_bin import resolve_claude_bin
 
 log = logging.getLogger("ari.claude_code")
 
@@ -25,7 +26,7 @@ class ClaudeCodeCliAdapter:
         runner=None,
     ):
         self._model = model
-        self._bin = claude_bin
+        self._bin = resolve_claude_bin(claude_bin)
         self._runner = runner or self._default_runner
 
     async def complete(

@@ -3,6 +3,7 @@ import json
 import logging
 
 from ari.domain.coding.entities import CodingInstruction, CodingPlan, CodingResult
+from ari.infrastructure.claude_bin import resolve_claude_bin
 
 log = logging.getLogger("ari.claude_code_coder")
 
@@ -35,7 +36,7 @@ class ClaudeCodeCoder:
         git_env: dict | None = None,
     ):
         self._model = model
-        self._bin = claude_bin
+        self._bin = resolve_claude_bin(claude_bin)
         self._timeout = timeout
         self._plan_runner = plan_runner or self._default_plan_runner
         self._exec_runner = exec_runner or self._default_exec_runner

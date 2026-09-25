@@ -11,8 +11,7 @@ class Workspace:
         if not os.path.isabs(raw):
             raw = os.path.join(self._root, raw)
         path = os.path.realpath(raw)  # resolves symlinks + '..'
-        root = self._root
-        if path != root and not path.startswith(root + os.sep):
+        if not self._inside_root(path):
             raise ValueError(f"resolved path '{path}' is outside allowed root '{self._root}'")
         if not os.path.isdir(path):
             raise ValueError(f"target directory does not exist: {path}")
@@ -20,7 +19,7 @@ class Workspace:
 
     async def create_branch(self, target_dir: str, slug: str) -> str:
         real = os.path.realpath(target_dir)
-        if real != self._root and not real.startswith(self._root + os.sep):
+        if not self._inside_root(real):
             raise ValueError(f"resolved path '{real}' is outside allowed root '{self._root}'")
         branch = f"ari/tg-{slug}"
         proc = await asyncio.create_subprocess_exec(
@@ -30,3 +29,8 @@ class Workspace:
         if proc.returncode != 0:
             raise RuntimeError(f"git checkout -b failed: {err.decode(errors='replace')[:300]}")
         return branch
+
+    def _inside_root(self, path: str) -> bool:
+        # normcase: Windows paths are case-insensitive (D:\X == d:\x).
+        p, root = os.path.normcase(path), os.path.normcase(self._root)
+        return p == root or p.startswith(root + os.sep)

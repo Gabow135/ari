@@ -29,11 +29,14 @@ hexagonal (ports & adapters) architecture.
 
 ## Requirements
 
-> **Use `python3` explicitly.** On macOS/Homebrew there is no `python` alias, and
-> bare `pip`/`pytest` may resolve to a different (older) interpreter. This project
-> requires Python **3.12+** — always invoke it as `python3 -m ...`.
+Runs on **macOS, Linux and Windows**.
 
-- Python 3.12+ (`python3 --version`)
+> **Use `python3` explicitly on macOS/Linux.** On macOS/Homebrew there is no
+> `python` alias, and bare `pip`/`pytest` may resolve to a different (older)
+> interpreter — always invoke it as `python3 -m ...`. On Windows use the
+> virtualenv's `python` (see below).
+
+- Python 3.11+ (`python3 --version`)
 - The **Claude Code CLI** installed and logged in (`claude login`)
 - A Telegram bot token from [@BotFather](https://t.me/BotFather)
 
@@ -51,10 +54,30 @@ cp .env.example .env
 claude login
 ```
 
+### Windows (PowerShell)
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python -m pip install -e ".[dev]"
+Copy-Item .env.example .env   # then set TELEGRAM_BOT_TOKEN=...
+claude login
+```
+
+Notes:
+- The npm-installed `claude.cmd` shim is detected automatically and Ari calls the
+  real `claude.exe` behind it (running the `.cmd` would mangle multi-line prompts
+  through `cmd.exe`). `ARI_CLAUDE_BIN` can point to a specific `claude.exe`.
+- The Hugging Face cache warns that symlinks are unsupported unless Developer Mode
+  is on; it still works. Silence it with `$env:HF_HUB_DISABLE_SYMLINKS_WARNING="1"`.
+
 ## Run
 
 ```bash
-python3 -m ari.main
+python3 -m ari.main                    # macOS / Linux
+```
+
+```powershell
+.\.venv\Scripts\python -m ari.main    # Windows
 ```
 
 Then message your bot on Telegram. It replies with context and remembers facts
