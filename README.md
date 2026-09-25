@@ -76,7 +76,21 @@ python3 -m pytest -m slow           # also runs tests that download a model / hi
 | `ARI_DB_PATH` | no | `./ari.db` | SQLite database path |
 | `ARI_WORKING_MEMORY_SIZE` | no | `20` | Recent messages kept in working memory |
 | `ARI_RECALL_TOP_K` | no | `5` | Episodic recalls retrieved per turn |
-| `ARI_EMBEDDING_MODEL` | no | `intfloat/multilingual-e5-large` | fastembed model (multilingual) |
+| `ARI_EMBEDDING_MODEL` | no | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | fastembed multilingual model (single-file ONNX) |
 | `ARI_CLAUDE_BIN` | no | `claude` | Path/name of the Claude Code CLI binary |
 
 No `ANTHROPIC_API_KEY` is used — authentication is handled by the Claude Code CLI.
+
+## Troubleshooting
+
+**`onnxruntime ... External data path escapes model directory` on startup.**
+This happens with large split ONNX embedding models (e.g.
+`intfloat/multilingual-e5-large`, which ships `model.onnx` + `model.onnx_data`):
+recent `onnxruntime` versions reject external-data files that the HuggingFace
+blob cache stores in a separate directory. Use a **single-file** model — the
+default `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` avoids it.
+If you want the higher-quality e5-large, you'd need to pin an older `onnxruntime`
+or download the model into a flat local directory; not needed for Phase 1.
+
+**First run downloads the embedding model** (a few hundred MB) into a local
+fastembed cache — that's expected and happens once.

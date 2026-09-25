@@ -12,5 +12,9 @@ class Settings(BaseSettings):
     db_path: str = "./ari.db"
     working_memory_size: int = 20
     recall_top_k: int = 5
-    embedding_model: str = "intfloat/multilingual-e5-large"
+    # Single-file ONNX multilingual model — avoids the onnxruntime "external data
+    # path escapes model directory" error that large split models (e.g.
+    # intfloat/multilingual-e5-large, which ships model.onnx + model.onnx_data)
+    # hit with the HuggingFace blob cache.
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     claude_bin: str = "claude"
