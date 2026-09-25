@@ -1,5 +1,7 @@
 import asyncio
+import dataclasses
 import logging
+import os
 
 from ari.application.coding.authorizer import Authorizer
 from ari.application.coding.confirm_coding import ConfirmCoding
@@ -53,18 +55,18 @@ def main() -> None:
             timeout=settings.coding_timeout_seconds,
         )
         # default_dir: directory of this file's project root (the Ari repo itself)
-        import os
         default_dir = os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))))
         request_coding = RequestCoding(coder, workspace, store, default_dir=default_dir)
         confirm = ConfirmCoding(coder, workspace, store)
 
+        # Base deps: chat and confirm_coding are None; bound per-message in _dispatch.
         coding_deps = CodingDeps(
             authorizer=Authorizer(settings.owner_id_set),
             pending_store=store,
             request_coding=request_coding,
-            confirm_coding=None,   # bound per-message in _on_message
-            chat=None,             # bound per-message in _on_message
+            confirm_coding=None,
+            chat=None,
             scheduler=lambda coro: asyncio.ensure_future(coro),
         )
         app.bot_data["coding_deps"] = coding_deps
@@ -75,7 +77,7 @@ def main() -> None:
         if conn is not None:
             await conn.close()
 
-    from telegram.ext import Application, MessageHandler, filters
+    from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
     app = (
         Application.builder()
@@ -85,32 +87,61 @@ def main() -> None:
         .build()
     )
 
-    async def _on_message(update, _context):
+    async def _dispatch(update, text: str) -> None:
+        """Shared dispatch: builds per-message deps and routes the text."""
+        msg = update.effective_message
+        if msg is None:
+            return
+
+        message_handler = app.bot_data["handler"]
+        base_deps = app.bot_data["coding_deps"]
+        confirm = app.bot_data["confirm"]
+        user_id = str(msg.from_user.id)
+
+        async def report(reply_text: str) -> None:
+            for part in TelegramAdapter.split_text(reply_text):
+                await msg.reply_text(part)
+
+        async def chat(chat_text: str, uid: str) -> str:
+            inc = TelegramAdapter.to_incoming(update)
+            if inc is None:
+                return ""
+            # Build a fresh IncomingMessage reflecting the actual text for this call.
+            from ari.domain.ports.gateway_port import IncomingMessage
+            scoped_inc = IncomingMessage(
+                user_id=inc.user_id, chat_id=inc.chat_id, text=chat_text)
+            out = await message_handler(scoped_inc)
+            return out.text
+
+        # Per-message deps: never mutate the shared base instance.
+        local_deps = dataclasses.replace(
+            base_deps,
+            chat=chat,
+            confirm_coding=lambda uid: confirm(uid, report),
+        )
+
+        reply = await route_message(text, user_id, local_deps)
+        if reply is not None:
+            for part in TelegramAdapter.split_text(reply):
+                await msg.reply_text(part)
+
+    async def _on_command(update, _context) -> None:
+        """Handle /code and /fase2 slash commands."""
+        msg = update.effective_message
+        if msg is None:
+            return
+        # msg.text is the full original text, e.g. "/code dir:. add X"
+        await _dispatch(update, msg.text)
+
+    async def _on_message(update, _context) -> None:
+        """Handle plain-text messages (chat, dale/no confirmations)."""
         inc = TelegramAdapter.to_incoming(update)
         if inc is None:
             return
+        await _dispatch(update, inc.text)
 
-        handler = app.bot_data["handler"]
-        deps = app.bot_data["coding_deps"]
-        confirm = app.bot_data["confirm"]
-
-        async def report(text):
-            for part in TelegramAdapter.split_text(text):
-                await update.effective_message.reply_text(part)
-
-        async def chat(text, user_id):
-            out = await handler(inc)
-            return out.text
-
-        # Bind per-message closures into deps
-        deps.chat = chat
-        deps.confirm_coding = lambda uid: confirm(uid, report)
-
-        reply = await route_message(inc.text, inc.user_id, deps)
-        if reply is not None:
-            for part in TelegramAdapter.split_text(reply):
-                await update.effective_message.reply_text(part)
-
+    # Slash commands reach _on_command; plain text reaches _on_message.
+    app.add_handler(CommandHandler(["code", "fase2"], _on_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
     app.run_polling()
 
