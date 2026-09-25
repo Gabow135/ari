@@ -1,10 +1,17 @@
 import asyncio
 import logging
 
+from ari.application.coding.authorizer import Authorizer
+from ari.application.coding.confirm_coding import ConfirmCoding
+from ari.application.coding.flow import CodingDeps, route_message
+from ari.application.coding.pending_store import PendingStore
+from ari.application.coding.request_coding import RequestCoding
 from ari.application.handle_message import HandleMessage
 from ari.application.memory_maintainer import MemoryMaintainer
 from ari.config.settings import Settings
 from ari.domain.agent.agent_service import AgentService
+from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
+from ari.infrastructure.coder.workspace import Workspace
 from ari.infrastructure.gateway.telegram_adapter import TelegramAdapter
 from ari.infrastructure.llm.claude_code_adapter import ClaudeCodeCliAdapter
 from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
@@ -37,6 +44,32 @@ def main() -> None:
         app.bot_data["handler"] = handler
         app.bot_data["conn"] = conn
 
+        # Coding infrastructure
+        store = PendingStore()
+        workspace = Workspace(settings.allowed_root)
+        coder = ClaudeCodeCoder(
+            model=settings.coder_model,
+            claude_bin=settings.claude_bin,
+            timeout=settings.coding_timeout_seconds,
+        )
+        # default_dir: directory of this file's project root (the Ari repo itself)
+        import os
+        default_dir = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+        request_coding = RequestCoding(coder, workspace, store, default_dir=default_dir)
+        confirm = ConfirmCoding(coder, workspace, store)
+
+        coding_deps = CodingDeps(
+            authorizer=Authorizer(settings.owner_id_set),
+            pending_store=store,
+            request_coding=request_coding,
+            confirm_coding=None,   # bound per-message in _on_message
+            chat=None,             # bound per-message in _on_message
+            scheduler=lambda coro: asyncio.ensure_future(coro),
+        )
+        app.bot_data["coding_deps"] = coding_deps
+        app.bot_data["confirm"] = confirm
+
     async def _post_shutdown(app):
         conn = app.bot_data.get("conn")
         if conn is not None:
@@ -53,13 +86,30 @@ def main() -> None:
     )
 
     async def _on_message(update, _context):
-        handler = app.bot_data["handler"]
-        incoming = TelegramAdapter.to_incoming(update)
-        if incoming is None:
+        inc = TelegramAdapter.to_incoming(update)
+        if inc is None:
             return
-        out = await handler(incoming)
-        for part in TelegramAdapter.split_text(out.text):
-            await update.effective_message.reply_text(part)
+
+        handler = app.bot_data["handler"]
+        deps = app.bot_data["coding_deps"]
+        confirm = app.bot_data["confirm"]
+
+        async def report(text):
+            for part in TelegramAdapter.split_text(text):
+                await update.effective_message.reply_text(part)
+
+        async def chat(text, user_id):
+            out = await handler(inc)
+            return out.text
+
+        # Bind per-message closures into deps
+        deps.chat = chat
+        deps.confirm_coding = lambda uid: confirm(uid, report)
+
+        reply = await route_message(inc.text, inc.user_id, deps)
+        if reply is not None:
+            for part in TelegramAdapter.split_text(reply):
+                await update.effective_message.reply_text(part)
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
     app.run_polling()
