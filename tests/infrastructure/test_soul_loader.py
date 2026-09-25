@@ -22,3 +22,13 @@ def test_project_soul_exists_and_is_spanish():
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     text = SoulLoader(os.path.join(root, "soul"))()
     assert text and "Ari" in text and "MCP" in text
+
+
+def test_other_filename(tmp_path):
+    (tmp_path / "HEARTBEAT.md").write_text("- revisa", encoding="utf-8")
+    assert SoulLoader(str(tmp_path), "HEARTBEAT.md")() == "- revisa"
+
+
+def test_project_heartbeat_exists():
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    assert SoulLoader(os.path.join(root, "soul"), "HEARTBEAT.md")()

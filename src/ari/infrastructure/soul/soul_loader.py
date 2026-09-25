@@ -5,11 +5,11 @@ log = logging.getLogger("ari.soul")
 
 
 class SoulLoader:
-    """Reads ``<soul_dir>/SOUL.md``; re-reads it only when the file changes, so
+    """Reads ``<soul_dir>/<filename>`` (default ``SOUL.md``); re-reads it only when the file changes, so
     edits apply on the next message without a restart. Missing -> None."""
 
-    def __init__(self, soul_dir: str):
-        self._path = os.path.join(soul_dir, "SOUL.md")
+    def __init__(self, soul_dir: str, filename: str = "SOUL.md"):
+        self._path = os.path.join(soul_dir, filename)
         self._stamp: tuple[int, int] | None = None
         self._text: str | None = None
         self._warned_missing = False
