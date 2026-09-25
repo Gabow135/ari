@@ -7,6 +7,7 @@ import os
 # garbage-collected while still running (Fix 4 — anti-GC guard).
 _background_tasks: set = set()
 
+from ari.application.access.gate import ADMIN_COMMANDS, AccessGate, deliver
 from ari.application.coding.authorizer import Authorizer
 from ari.application.coding.confirm_coding import ConfirmCoding
 from ari.application.coding.flow import CodingDeps, route_message
@@ -16,6 +17,7 @@ from ari.application.handle_message import HandleMessage
 from ari.application.memory_maintainer import MemoryMaintainer
 from ari.config.settings import Settings
 from ari.domain.agent.agent_service import AgentService
+from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
 from ari.infrastructure.coder.workspace import Workspace
 from ari.infrastructure.gateway.telegram_adapter import TelegramAdapter
@@ -49,6 +51,10 @@ def main() -> None:
         handler, conn = await build(settings)
         app.bot_data["handler"] = handler
         app.bot_data["conn"] = conn
+        app.bot_data["gate"] = AccessGate(SqliteAccessStore(conn), settings.owner_id_set)
+        if not settings.owner_id_set:
+            logging.warning("ARI_OWNER_IDS is empty: nobody can approve access, "
+                            "so every Telegram user will be blocked")
 
         # Coding infrastructure
         store = PendingStore()
@@ -92,10 +98,26 @@ def main() -> None:
         .build()
     )
 
+    async def _reply_parts(msg, text: str) -> None:
+        for part in TelegramAdapter.split_text(text):
+            await msg.reply_text(part)
+
+    async def _send(chat_id: str, text: str) -> None:
+        await app.bot.send_message(chat_id=int(chat_id), text=text)
+
+    async def _admit(msg) -> bool:
+        """Access gate: only owners and approved users get past this point."""
+        user = msg.from_user
+        result = await app.bot_data["gate"].check(str(user.id), user.username)
+        await deliver(result, lambda t: _reply_parts(msg, t), _send)
+        return result.allowed
+
     async def _dispatch(update, text: str) -> None:
         """Shared dispatch: builds per-message deps and routes the text."""
         msg = update.effective_message
-        if msg is None:
+        if msg is None or msg.from_user is None:
+            return
+        if not await _admit(msg):
             return
 
         message_handler = app.bot_data["handler"]
@@ -151,7 +173,25 @@ def main() -> None:
             return
         await _dispatch(update, inc.text)
 
+    async def _on_start(update, _context) -> None:
+        """/start: greet approved users; hand a pairing code to everyone else."""
+        msg = update.effective_message
+        if msg is None or msg.from_user is None:
+            return
+        if await _admit(msg):
+            await msg.reply_text("¡Hola! Escribime cuando quieras.")
+
+    async def _on_access_admin(update, _context) -> None:
+        """Owner-only /aprobar, /revocar, /accesos."""
+        msg = update.effective_message
+        if msg is None or msg.from_user is None:
+            return
+        result = await app.bot_data["gate"].admin_command(msg.text, str(msg.from_user.id))
+        await deliver(result, lambda t: _reply_parts(msg, t), _send)
+
     # Slash commands reach _on_command; plain text reaches _on_message.
+    app.add_handler(CommandHandler("start", _on_start))
+    app.add_handler(CommandHandler(list(ADMIN_COMMANDS), _on_access_admin))
     app.add_handler(CommandHandler(["code", "fase2"], _on_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
     app.run_polling()

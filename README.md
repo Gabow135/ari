@@ -83,6 +83,22 @@ python3 -m ari.main                    # macOS / Linux
 Then message your bot on Telegram. It replies with context and remembers facts
 and past exchanges across conversations.
 
+## Access control
+
+Only **owners** (`ARI_OWNER_IDS`) and users an owner approved can talk to Ari.
+
+1. An unknown user writes to the bot (or sends `/start`) and gets a pairing code
+   like `K7QM-X3PA`. Their message is not sent to Claude nor stored.
+2. Every owner is notified once: `@juan (id 12345) pide acceso a Ari.`
+3. An owner approves with `/aprobar K7QM-X3PA`; the user is told they're in.
+
+Owner commands: `/aprobar CÓDIGO`, `/revocar USER_ID`, `/accesos` (list pending
+and approved). Approvals persist in the SQLite `access` table.
+
+> Set `ARI_OWNER_IDS` to your Telegram user id (ask [@userinfobot](https://t.me/userinfobot)).
+> If it is empty nobody can approve, so **every user is blocked**. Owners must
+> have opened a chat with the bot once to receive access notifications.
+
 ## Test
 
 ```bash
@@ -101,6 +117,7 @@ python3 -m pytest -m slow           # also runs tests that download a model / hi
 | `ARI_RECALL_TOP_K` | no | `5` | Episodic recalls retrieved per turn |
 | `ARI_EMBEDDING_MODEL` | no | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | fastembed multilingual model (single-file ONNX) |
 | `ARI_CLAUDE_BIN` | no | `claude` | Path/name of the Claude Code CLI binary |
+| `ARI_OWNER_IDS` | yes* | — | Comma-separated owner Telegram ids: approve access and use coding mode. *Empty blocks everyone |
 
 No `ANTHROPIC_API_KEY` is used — authentication is handled by the Claude Code CLI.
 

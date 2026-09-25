@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS facts (
 
 CREATE TABLE IF NOT EXISTS summaries (
   user_id TEXT PRIMARY KEY, content TEXT NOT NULL, updated_at TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS access (
+  user_id TEXT PRIMARY KEY, username TEXT, code TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 """
 
 
