@@ -42,3 +42,10 @@ def test_resolve_rejects_symlink_escape(root):
     os.symlink(str(root / "outside"), str(link))
     with pytest.raises(ValueError):
         ws.resolve("escape", default_dir=str(root / "proj"))
+
+
+@pytest.mark.asyncio
+async def test_create_branch_rejects_outside_root(root):
+    ws = Workspace(str(root / "proj"))
+    with pytest.raises(ValueError):
+        await ws.create_branch("/tmp", "x")
