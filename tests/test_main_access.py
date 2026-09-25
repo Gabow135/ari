@@ -178,3 +178,36 @@ def test_non_owner_cannot_stop(monkeypatch):
     app, _, replies = _run_main_with(
         monkeypatch, [("stop", 7, "/stop"), (None, 7, "dale")])
     assert not app.stopped
+
+
+# --- /recordatorios and background sends ------------------------------------
+
+class _FakeActions:
+    async def list_text(self, user_id):
+        return f"lista de {user_id}"
+
+
+async def test_recordatorios_requires_access_and_lists(wired):
+    app, _ = wired
+    app.bot_data["actions"] = _FakeActions()
+    cb = _callback(app, telegram.ext.CommandHandler, "recordatorios")
+    replies = []
+    await cb(_update(7, "/recordatorios", replies), None)
+    assert "código" in replies[0].lower()  # not approved yet
+    owner_replies = []
+    await cb(_update(42, "/recordatorios", owner_replies), None)
+    assert owner_replies == ["lista de 42"]
+
+
+async def test_background_send_splits_long_text(wired):
+    app, _ = wired
+    await main_mod._send_quietly(app.bot, "42", "x" * 5000)
+    assert [len(t) for _, t in app.sent] == [4096, 904]
+
+
+async def test_background_send_never_raises():
+    class Broken:
+        async def send_message(self, chat_id, text):
+            raise RuntimeError("Forbidden")
+
+    await main_mod._send_quietly(Broken(), "42", "hola")  # must not raise

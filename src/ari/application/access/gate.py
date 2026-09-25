@@ -36,9 +36,10 @@ class GateResult:
 class AccessGate:
     """Only owners and users whose pairing code an owner approved may talk to Ari."""
 
-    def __init__(self, store, owner_ids: set[str]):
+    def __init__(self, store, owner_ids: set[str], on_revoke=None):
         self._store = store
         self._owners = {str(x) for x in owner_ids}
+        self._on_revoke = on_revoke  # async (user_id) -> None, e.g. cancel their schedules
 
     def is_owner(self, user_id: str) -> bool:
         return str(user_id) in self._owners
@@ -101,6 +102,8 @@ class AccessGate:
         if rec is None:
             return GateResult(reply=f"No hay registro de acceso para id {arg}.")
         await self._store.delete(rec.user_id)
+        if self._on_revoke is not None:
+            await self._on_revoke(rec.user_id)
         log.info("access revoked for %s", _who(rec.user_id, rec.username))
         return GateResult(reply=f"Acceso revocado para {_who(rec.user_id, rec.username)}.")
 

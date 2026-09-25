@@ -25,7 +25,13 @@ def test_non_owner_does_not_see_admin_commands():
 
 
 def test_menu_is_derived_from_registry():
-    assert [c for c, _ in menu_commands(owner=False)] == ["start"]
+    assert [c for c, _ in menu_commands(owner=False)] == ["start", "recordatorios"]
     owner = [c for c, _ in menu_commands(owner=True)]
-    assert set(owner) == {"start", "code", "aprobar", "revocar", "accesos", "restart", "stop"}
+    assert set(owner) == {"start", "recordatorios", "code", "aprobar", "revocar",
+                          "accesos", "restart", "stop"}
     assert owner[0] == "start"
+
+
+def test_proactivity_limitations_removed():
+    text = " ".join(LIMITATIONS)
+    assert "iniciativa propia" not in text and "recordatorios" not in text

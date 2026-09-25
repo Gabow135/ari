@@ -29,6 +29,20 @@ CAPABILITIES: list[Capability] = [
         summary="Mientras trabajas, el usuario ve «escribiendo…» y un mensaje de progreso "
                 "con lo que vas haciendo; se borra al llegar tu respuesta final."),
     Capability(
+        command="recordatorios", menu="Ver tus recordatorios y tareas",
+        summary="Recordatorios y tareas programadas pedidas en lenguaje natural "
+                "(«recuérdame mañana a las 9…», «cada lunes a las 8 resúmeme…»), "
+                "puntuales o recurrentes; se cancelan pidiéndolo.",
+        usage="/recordatorios lista los activos con su #número."),
+    Capability(
+        owner_only=True,
+        summary="Latido cada hora (fuera del horario de silencio 22–07): revisas por tu "
+                "cuenta si hay algo útil que decirle a tu creador; si no, no escribes."),
+    Capability(
+        owner_only=True,
+        summary="Avisos del sistema a tu creador: solicitudes de acceso sin aprobar hace "
+                "más de 12 h, fallas repetidas de Claude y tareas pausadas."),
+    Capability(
         command="code", menu="Tarea de código: /code [dir:ruta] instrucción", owner_only=True,
         summary="Programar en los proyectos de la carpeta permitida usando Claude Code "
                 "con herramientas (leer, editar, ejecutar comandos).",
@@ -63,8 +77,6 @@ LIMITATIONS: list[str] = [
      "la agrega a Ari: autorizar una cuenta en otra app (claude.ai, Google…) NO te da "
      "acceso. Explica qué habría que agregarte, pero no digas que podrás usarlo "
      "hasta que esté agregado."),
-    "No puedes escribir por iniciativa propia: solo respondes cuando te escriben.",
-    "No puedes programar recordatorios ni tareas periódicas.",
 ]
 
 

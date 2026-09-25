@@ -115,3 +115,16 @@ async def test_deliver_sends_reply_and_survives_failed_notification():
 def test_normalize_code():
     assert normalize_code(" k7qm-x3pa ") == "K7QMX3PA"
     assert normalize_code("K7QM X3PA") == "K7QMX3PA"
+
+
+async def test_revoke_calls_on_revoke(store):
+    revoked = []
+
+    async def on_revoke(user_id):
+        revoked.append(user_id)
+
+    gate = AccessGate(store, owner_ids={OWNER}, on_revoke=on_revoke)
+    code = _code_in((await gate.check("7", "juan")).reply)
+    await gate.admin_command(f"/aprobar {code}", OWNER)
+    await gate.admin_command("/revocar 7", OWNER)
+    assert revoked == ["7"]

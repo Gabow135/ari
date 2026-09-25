@@ -104,6 +104,21 @@ Ari's chat runs the Claude CLI isolated (`--tools ""`, `--strict-mcp-config`,
 `--setting-sources project`, `--disable-slash-commands`), so the host user's
 claude.ai connectors, hooks, plugins and skills never leak into its replies.
 
+## Proactivity
+
+- **Reminders & tasks in natural language:** "recuérdame mañana a las 9 llamar a
+  Juan", "cada lunes a las 8 resúmeme mis pendientes", "cancela el 12". Ari
+  confirms with the stored `#id` and time; `/recordatorios` lists them.
+  Reminders send the text; tasks run as a normal Ari turn and send the result.
+- **Heartbeat (owner only):** every `ARI_HEARTBEAT_MINUTES` Ari reviews
+  [`soul/HEARTBEAT.md`](soul/HEARTBEAT.md), your memory and upcoming items and
+  writes only if it's worthwhile (max 3/day).
+- **System notices (owner only):** stale access requests, Claude CLI failing,
+  paused tasks.
+- **Quiet hours** (`ARI_QUIET_HOURS`, default 22–7 local): no heartbeat, notices
+  are queued until morning. Your own reminders still arrive on time.
+- Everything is stored in SQLite and survives `/restart` and outages.
+
 ## Access control
 
 Only **owners** (`ARI_OWNER_IDS`) and users an owner approved can talk to Ari.
@@ -154,6 +169,10 @@ python3 -m pytest -m slow           # also runs tests that download a model / hi
 | `ARI_SOUL_DIR` | no | `./soul` | Folder holding `SOUL.md` (Ari's identity) |
 | `ARI_CLAUDE_OAUTH_TOKEN` | recommended | — | Ari's own CLI login from `claude setup-token`. Keeps your account (and its email) out of Ari's context |
 | `ARI_CLAUDE_CONFIG_DIR` | no | `./.ari-claude` | Ari's private claude CLI config dir (used with the token) |
+| `ARI_TIMEZONE` | no | `America/Guayaquil` | Local time for reminders, cron and quiet hours |
+| `ARI_QUIET_HOURS` | no | `22-7` | Quiet window (local hours); empty = none |
+| `ARI_HEARTBEAT_MINUTES` | no | `60` | Heartbeat interval; `0` disables it |
+| `ARI_MAX_ITEMS_PER_USER` | no | `20` | Active reminders/tasks per user |
 
 No `ANTHROPIC_API_KEY` is used — authentication is handled by the Claude Code CLI.
 

@@ -17,9 +17,10 @@ async def test_default_menu_only_has_start_and_owners_get_full_menu():
     bot = _FakeBot()
     await register_commands(bot, {"42"})
     (public, default_scope), (owner, owner_scope) = bot.calls
-    assert public == ["start"] and isinstance(default_scope, BotCommandScopeDefault)
+    assert public == ["start", "recordatorios"] and isinstance(default_scope, BotCommandScopeDefault)
     assert isinstance(owner_scope, BotCommandScopeChat) and owner_scope.chat_id == 42
-    assert {"start", "code", "aprobar", "revocar", "accesos", "restart", "stop"} == set(owner)
+    assert {"start", "recordatorios", "code", "aprobar", "revocar", "accesos",
+            "restart", "stop"} == set(owner)
 
 
 async def test_failure_for_one_owner_does_not_stop_the_rest():
