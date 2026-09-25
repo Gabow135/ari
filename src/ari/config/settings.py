@@ -18,3 +18,11 @@ class Settings(BaseSettings):
     # hit with the HuggingFace blob cache.
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     claude_bin: str = "claude"
+    owner_ids: str = ""
+    allowed_root: str = "."
+    coder_model: str = "claude-sonnet-4-6"
+    coding_timeout_seconds: int = 900
+
+    @property
+    def owner_id_set(self) -> set[str]:
+        return {p.strip() for p in self.owner_ids.split(",") if p.strip()}
