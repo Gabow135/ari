@@ -3,6 +3,10 @@ import dataclasses
 import logging
 import os
 
+# Module-level set to keep references to background tasks so they cannot be
+# garbage-collected while still running (Fix 4 — anti-GC guard).
+_background_tasks: set = set()
+
 from ari.application.coding.authorizer import Authorizer
 from ari.application.coding.confirm_coding import ConfirmCoding
 from ari.application.coding.flow import CodingDeps, route_message
@@ -60,14 +64,15 @@ def main() -> None:
         request_coding = RequestCoding(coder, workspace, store, default_dir=default_dir)
         confirm = ConfirmCoding(coder, workspace, store)
 
-        # Base deps: chat and confirm_coding are None; bound per-message in _dispatch.
+        # Base deps: chat, confirm_coding, and scheduler are None/placeholder;
+        # all three are bound per-message in _dispatch (scheduler uses the anti-GC wrapper).
         coding_deps = CodingDeps(
             authorizer=Authorizer(settings.owner_id_set),
             pending_store=store,
             request_coding=request_coding,
             confirm_coding=None,
             chat=None,
-            scheduler=lambda coro: asyncio.ensure_future(coro),
+            scheduler=None,  # replaced per-message in _dispatch
         )
         app.bot_data["coding_deps"] = coding_deps
         app.bot_data["confirm"] = confirm
@@ -113,11 +118,17 @@ def main() -> None:
             out = await message_handler(scoped_inc)
             return out.text
 
+        def _schedule(coro):
+            task = asyncio.ensure_future(coro)
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+
         # Per-message deps: never mutate the shared base instance.
         local_deps = dataclasses.replace(
             base_deps,
             chat=chat,
-            confirm_coding=lambda uid: confirm(uid, report),
+            confirm_coding=lambda uid, action: confirm(uid, action, report),
+            scheduler=_schedule,
         )
 
         reply = await route_message(text, user_id, local_deps)

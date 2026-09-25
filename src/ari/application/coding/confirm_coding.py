@@ -22,11 +22,10 @@ class ConfirmCoding:
         self._n += 1
         return f"{self._n}"
 
-    async def __call__(self, user_id: str, report) -> None:
-        pending = self._store.pop(user_id)
-        if pending is None:
-            return
-        self._store.mark_busy(user_id)
+    async def __call__(self, user_id: str, action, report) -> None:
+        # action is the already-popped PendingAction; busy is already marked by
+        # route_message before this coroutine is scheduled — do NOT re-pop / re-mark.
+        pending = action
         try:
             if self._use_custom_slug:
                 slug = self._slug_source()

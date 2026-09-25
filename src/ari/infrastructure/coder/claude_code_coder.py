@@ -32,12 +32,16 @@ class ClaudeCodeCoder:
         timeout: int = 900,
         plan_runner=None,
         exec_runner=None,
+        git_env: dict | None = None,
     ):
         self._model = model
         self._bin = claude_bin
         self._timeout = timeout
         self._plan_runner = plan_runner or self._default_plan_runner
         self._exec_runner = exec_runner or self._default_exec_runner
+        # Optional env override for git subprocesses (useful in tests to force
+        # commit failures by stripping user identity).
+        self._git_env = git_env
 
     # ------------------------------------------------------------------
     # CoderPort interface
@@ -69,7 +73,10 @@ class ClaudeCodeCoder:
             log.error("exec runner raised: %s", exc)
             return CodingResult(ok=False, branch=branch, detail=str(exc)[:500])
 
-        changed, commits = await self._collect_git(plan.target_dir)
+        changed, commits, git_err = await self._collect_git(plan.target_dir)
+        if git_err is not None:
+            log.warning("execute: git commit failed: %s", git_err)
+            return CodingResult(ok=False, branch=branch, detail=git_err)
         log.info("execute ok: %d changed files, %d commits", len(changed), len(commits))
         return CodingResult(
             ok=True,
@@ -132,27 +139,45 @@ class ClaudeCodeCoder:
     # Git helpers
     # ------------------------------------------------------------------
 
-    async def _collect_git(self, target_dir: str) -> tuple[list[str], list[str]]:
-        """Commit any leftover dirty files, then return changed files + recent commits."""
+    async def _collect_git(self, target_dir: str) -> tuple[list[str], list[str], str | None]:
+        """Commit any leftover dirty files.
 
-        async def git(*args: str) -> str:
-            p = await asyncio.create_subprocess_exec(
-                "git", "-C", target_dir, *args,
+        Returns (changed_files, commits, error_detail).
+        error_detail is None on success; a non-empty string when git commit failed.
+        changed_files is derived from what was ACTUALLY committed (``git show``).
+        """
+
+        async def git(*args: str) -> tuple[str, str, int]:
+            kwargs = dict(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            o, _ = await p.communicate()
-            return o.decode(errors="replace").strip()
+            if self._git_env is not None:
+                kwargs["env"] = self._git_env
+            p = await asyncio.create_subprocess_exec(
+                "git", "-C", target_dir, *args,
+                **kwargs,
+            )
+            o, e = await p.communicate()
+            return o.decode(errors="replace").strip(), e.decode(errors="replace").strip(), p.returncode
 
-        status = await git("status", "--porcelain")
-        if status:
-            await git("add", "-A")
-            await git("commit", "-m", "chore: apply Ari coding task")
+        status_out, _status_err, _rc = await git("status", "--porcelain")
+        if status_out:
+            _add_out, _add_err, add_rc = await git("add", "-A")
+            if add_rc != 0:
+                return [], [], f"git add -A failed (exit {add_rc})"
+            commit_out, commit_err, commit_rc = await git("commit", "-m", "chore: apply Ari coding task")
+            if commit_rc != 0:
+                tail = (commit_err or commit_out)[-400:]
+                return [], [], f"git commit failed (exit {commit_rc}): {tail}"
 
-        files = [line[3:] for line in status.splitlines()] if status else []
-        log_out = await git("log", "--oneline", "-5", "--format=%h")
+        # Derive changed files from what was actually committed.
+        show_out, _show_err, _show_rc = await git("show", "--name-only", "--format=", "HEAD")
+        files = [f for f in show_out.splitlines() if f]
+
+        log_out, _log_err, _log_rc = await git("log", "--oneline", "-5", "--format=%h")
         commits = [c for c in log_out.splitlines() if c]
-        return files, commits
+        return files, commits, None
 
     # ------------------------------------------------------------------
     # Parsing helpers

@@ -26,3 +26,21 @@ def test_affirmative_and_negative():
     assert is_negative("no")
     assert is_negative("cancelar")
     assert not is_negative("nope maybe")
+
+
+def test_codex_prefix_is_not_a_command():
+    """/codex foo must NOT be parsed as a /code command."""
+    assert parse_coding_command("/codex foo") is None
+
+
+def test_coder_prefix_is_not_a_command():
+    assert parse_coding_command("/coder do something") is None
+
+
+def test_code_at_botname_is_parsed():
+    """/code@AriBot add X should parse as ("add X", None)."""
+    assert parse_coding_command("/code@AriBot add X") == ("add X", None)
+
+
+def test_fase2_at_botname_is_parsed():
+    assert parse_coding_command("/fase2@AriBot fix it") == ("fix it", None)

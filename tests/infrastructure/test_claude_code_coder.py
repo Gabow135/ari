@@ -50,7 +50,7 @@ async def test_execute_success_returns_ok():
 
     async def fake_collect(target_dir):
         commits_called.append(target_dir)
-        return ["file.py"], ["abc1234"]
+        return ["file.py"], ["abc1234"], None  # (files, commits, error_detail)
 
     coder = ClaudeCodeCoder(exec_runner=exec_runner)
     coder._collect_git = fake_collect  # patch for unit test
@@ -80,6 +80,52 @@ async def test_plan_falls_back_on_non_json():
     coder = ClaudeCodeCoder(plan_runner=plan_runner)
     plan = await coder.plan(CodingInstruction("u1", "do it"), "/repo")
     assert "plain text plan" in plan.summary
+
+
+# ---------------------------------------------------------------------------
+# Fix 2 — git commit failure returns ok=False
+# ---------------------------------------------------------------------------
+
+async def test_execute_git_commit_failure_returns_not_ok():
+    """If git commit fails (e.g. no user identity), execute returns ok=False.
+
+    Approach: real git repo with no HEAD + git_env overriding identity to empty
+    strings so git refuses to commit.  exec_runner is injected to "succeed" so
+    the failure comes purely from _collect_git.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init", tmpdir], check=True, capture_output=True)
+
+        # Write a dirty file so status --porcelain is non-empty.
+        dirty = os.path.join(tmpdir, "new_file.txt")
+        with open(dirty, "w") as f:
+            f.write("hello\n")
+
+        # Strip all identity env vars so git refuses to commit.
+        no_identity_env = {
+            k: v for k, v in os.environ.items()
+            if k not in {"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+                         "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"}
+        }
+        no_identity_env["GIT_AUTHOR_NAME"] = ""
+        no_identity_env["GIT_AUTHOR_EMAIL"] = ""
+        no_identity_env["GIT_COMMITTER_NAME"] = ""
+        no_identity_env["GIT_COMMITTER_EMAIL"] = ""
+        # Also prevent git from reading global config user identity.
+        no_identity_env["GIT_CONFIG_NOSYSTEM"] = "1"
+        no_identity_env["HOME"] = tmpdir  # no ~/.gitconfig with real identity
+
+        async def exec_runner(instr, target, model):
+            return '{"result": "done", "is_error": false}'
+
+        coder = ClaudeCodeCoder(exec_runner=exec_runner, git_env=no_identity_env)
+        plan = CodingPlan("s", tmpdir, "add file")
+        result = await coder.execute(plan, "ari/tg-test")
+
+        assert result.ok is False, (
+            "Expected ok=False when git commit fails due to missing identity"
+        )
+        assert result.detail, "Expected non-empty detail on commit failure"
 
 
 # ---------------------------------------------------------------------------

@@ -49,3 +49,13 @@ async def test_create_branch_rejects_outside_root(root):
     ws = Workspace(str(root / "proj"))
     with pytest.raises(ValueError):
         await ws.create_branch("/tmp", "x")
+
+
+@pytest.mark.asyncio
+async def test_create_branch_rejects_symlink_escape(root):
+    """A symlink inside the root pointing outside must be rejected before git runs."""
+    ws = Workspace(str(root / "proj"))
+    link = root / "proj" / "escape_link"
+    os.symlink(str(root / "outside"), str(link))
+    with pytest.raises(ValueError):
+        await ws.create_branch(str(link), "x")

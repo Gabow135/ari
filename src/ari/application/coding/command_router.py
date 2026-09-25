@@ -1,23 +1,35 @@
 _AFFIRMATIVE = {"dale", "si", "sí", "ok", "okay", "yes", "dale total"}
 _NEGATIVE = {"no", "cancelar", "cancel", "nope"}
 
+# Exact command tokens (strip @botname suffix before comparing).
+_COMMANDS = {"/code", "/fase2"}
+
+
+def _parse_token(raw: str) -> str:
+    """Return the bare command, stripping any @mention suffix."""
+    at = raw.find("@")
+    return raw[:at] if at != -1 else raw
+
 
 def parse_coding_command(text: str) -> tuple[str, str | None] | None:
     stripped = text.strip()
-    for prefix in ("/code", "/fase2"):
-        if stripped.startswith(prefix):
-            rest = stripped[len(prefix):].strip()
-            if not rest:
-                return None
-            target = None
-            if rest.startswith("dir:"):
-                head, _, tail = rest.partition(" ")
-                target = head[len("dir:"):] or None
-                rest = tail.strip()
-            if not rest:
-                return None
-            return rest, target
-    return None
+    parts = stripped.split(None, 1)  # split at most into [token, rest]
+    if not parts:
+        return None
+    token = _parse_token(parts[0])
+    if token not in _COMMANDS:
+        return None
+    rest = parts[1].strip() if len(parts) > 1 else ""
+    if not rest:
+        return None
+    target = None
+    if rest.startswith("dir:"):
+        head, _, tail = rest.partition(" ")
+        target = head[len("dir:"):] or None
+        rest = tail.strip()
+    if not rest:
+        return None
+    return rest, target
 
 
 def is_affirmative(text: str) -> bool:

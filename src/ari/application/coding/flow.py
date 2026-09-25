@@ -19,7 +19,16 @@ async def route_message(text: str, user_id: str, deps: CodingDeps) -> str | None
     pending = deps.pending_store.get(user_id)
     if pending is not None:
         if is_affirmative(text):
-            deps.scheduler(deps.confirm_coding(user_id))   # background; caller already told to reply
+            # Guard is SYNCHRONOUS: pop + mark_busy before scheduling so two
+            # rapid "dale" messages cannot both see a pending action.
+            if deps.pending_store.is_busy(user_id):
+                return "Ya hay un trabajo en curso para vos; esperá a que termine."
+            action = deps.pending_store.pop(user_id)
+            if action is None:
+                # Raced with another confirm that already popped it.
+                return "Ya hay un trabajo en curso para vos; esperá a que termine."
+            deps.pending_store.mark_busy(user_id)
+            deps.scheduler(deps.confirm_coding(user_id, action))
             return "Dale, arranco. Te aviso cuando termine."
         if is_negative(text):
             deps.pending_store.clear(user_id)
