@@ -45,6 +45,10 @@ class SqliteMemoryAdapter:
     async def store_recall(
         self, user_id: str, content: str, embedding: list[float], metadata: dict
     ) -> None:
+        if len(embedding) != self._dim:
+            raise ValueError(
+                f"embedding has {len(embedding)} dims, expected {self._dim}"
+            )
         cur = await self._conn.execute(
             "INSERT INTO recalls (user_id, content, metadata_json, created_at) "
             "VALUES (?, ?, ?, ?)",
@@ -60,6 +64,10 @@ class SqliteMemoryAdapter:
     async def retrieve_recalls(
         self, user_id: str, query_embedding: list[float], k: int
     ) -> list[Recall]:
+        if len(query_embedding) != self._dim:
+            raise ValueError(
+                f"embedding has {len(query_embedding)} dims, expected {self._dim}"
+            )
         # recalls_vec has a `user_id TEXT partition` column so the WHERE clause
         # restricts KNN search to that partition — fully user-isolated at the
         # vector-index level, with results ordered by similarity (distance ASC).

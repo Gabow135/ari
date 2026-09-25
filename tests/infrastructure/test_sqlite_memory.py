@@ -27,3 +27,14 @@ async def test_recall_search_is_user_scoped(adapter):
     assert all(r.user_id == "u1" for r in results)
     assert any("user one" in r.content for r in results)
     assert not any("user two" in r.content for r in results)
+
+
+async def test_wrong_dimension_embedding_raises(adapter):
+    with pytest.raises(ValueError):
+        await adapter.store_recall("u1", "x", [1.0, 2.0], {})  # 2 dims, expected 4
+
+
+async def test_wrong_dimension_query_embedding_raises(adapter):
+    await adapter.store_recall("u1", "x", [1.0, 0.0, 0.0, 0.0], {})
+    with pytest.raises(ValueError):
+        await adapter.retrieve_recalls("u1", [1.0, 2.0], k=5)  # 2 dims, expected 4
