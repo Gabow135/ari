@@ -21,6 +21,7 @@ from ari.domain.agent.agent_service import AgentService
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
 from ari.infrastructure.coder.workspace import Workspace
+from ari.infrastructure.gateway.bot_commands import register_commands
 from ari.infrastructure.gateway.telegram_adapter import TelegramAdapter
 from ari.infrastructure.llm.claude_code_adapter import ClaudeCodeCliAdapter
 from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
@@ -60,6 +61,7 @@ def main() -> None:
         if not settings.owner_id_set:
             logging.warning("ARI_OWNER_IDS is empty: nobody can approve access, "
                             "so every Telegram user will be blocked")
+        await register_commands(app.bot, settings.owner_id_set)
         notify_chat = os.environ.pop(RESTART_NOTIFY_ENV, None)
         if notify_chat:
             try:
