@@ -56,9 +56,8 @@ class SystemNotices:
                 continue
             await self._kv.kv_set(key, "1")
             who = f"@{rec.username} (id {rec.user_id})" if rec.username else f"id {rec.user_id}"
-            # Send stale access requests immediately, bypassing quiet hours queue
-            await self._to_owners(f"🔔 {who} sigue esperando acceso. "
-                                  f"Aprueba con: /aprobar {format_code(rec.code)}")
+            await self.emit(f"🔔 {who} sigue esperando acceso. "
+                            f"Aprueba con: /aprobar {format_code(rec.code)}")
 
     async def task_paused(self, item, reason: str) -> None:
         await self.emit(f"⏸️ Pausé la tarea #{item.id} ({item.text[:60]}) "
