@@ -45,14 +45,15 @@ def parse_line(line: str) -> tuple[ProgressEvent | None, str | None]:
 
 
 async def run_streaming(argv: list[str], stdin: bytes | None = None,
-                        cwd: str | None = None, timeout: float | None = None) -> str:
+                        cwd: str | None = None, timeout: float | None = None,
+                        env: dict | None = None) -> str:
     """Run a stream-json `claude` command, emitting progress for each event.
 
     Returns the final ``result`` line, which has the same shape as the CLI's
     ``--output-format json`` output.
     """
     proc = await asyncio.create_subprocess_exec(
-        *argv, cwd=cwd, limit=_LINE_LIMIT,
+        *argv, cwd=cwd, env=env, limit=_LINE_LIMIT,
         stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
 

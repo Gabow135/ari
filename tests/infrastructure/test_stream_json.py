@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 
 import pytest
@@ -88,3 +89,11 @@ async def test_run_streaming_nonzero_exit_raises():
 async def test_run_streaming_timeout_kills_process():
     with pytest.raises(RuntimeError, match="timed out"):
         await run_streaming([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)
+
+
+async def test_run_streaming_passes_env_to_cli():
+    script = ("import json, os; print(json.dumps({'type': 'result', 'is_error': False, "
+              "'result': os.environ.get('ARI_PROBE', '')}))")
+    env = {**os.environ, "ARI_PROBE": "visto"}
+    raw = await run_streaming([sys.executable, "-c", script], env=env)
+    assert json.loads(raw)["result"] == "visto"

@@ -184,3 +184,17 @@ async def test_execute_real_cli_creates_file():
         )
         lines = [l for l in log.stdout.strip().splitlines() if l]
         assert len(lines) >= 2, f"Expected at least 2 commits, got: {log.stdout}"
+
+
+async def test_default_runner_passes_cli_env(monkeypatch):
+    import ari.infrastructure.coder.claude_code_coder as mod
+    captured = {}
+
+    async def fake_run_streaming(argv, cwd=None, timeout=None, env=None, **_kw):
+        captured["env"] = env
+        return '{"type": "result", "is_error": false, "result": "plan"}'
+
+    monkeypatch.setattr(mod, "run_streaming", fake_run_streaming)
+    coder = ClaudeCodeCoder(claude_bin="claude", cli_env={"CLAUDE_CONFIG_DIR": "x"})
+    await coder.plan(CodingInstruction("u", "do it", None), ".")
+    assert captured["env"] == {"CLAUDE_CONFIG_DIR": "x"}

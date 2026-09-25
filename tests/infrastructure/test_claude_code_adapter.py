@@ -70,3 +70,17 @@ async def test_default_runner_isolates_chat_from_host_setup(monkeypatch):
     for flag in ("--strict-mcp-config", "--disable-slash-commands"):
         assert flag in argv
     assert argv[argv.index("--setting-sources") + 1] == "project"
+
+
+async def test_default_runner_passes_cli_env(monkeypatch):
+    import ari.infrastructure.llm.claude_code_adapter as mod
+    captured = {}
+
+    async def fake_run_streaming(argv, stdin=None, env=None, **_kw):
+        captured["env"] = env
+        return '{"type": "result", "is_error": false, "result": "ok"}'
+
+    monkeypatch.setattr(mod, "run_streaming", fake_run_streaming)
+    adapter = ClaudeCodeCliAdapter(claude_bin="claude", cli_env={"CLAUDE_CONFIG_DIR": "x"})
+    await adapter.complete("sys", [Message("u", "user", "hi", datetime.now(timezone.utc))])
+    assert captured["env"] == {"CLAUDE_CONFIG_DIR": "x"}

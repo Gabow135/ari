@@ -34,10 +34,12 @@ class ClaudeCodeCliAdapter:
         model: str = "claude-sonnet-4-6",
         claude_bin: str = "claude",
         runner=None,
+        cli_env: dict | None = None,
     ):
         self._model = model
         self._bin = resolve_claude_bin(claude_bin)
         self._runner = runner or self._default_runner
+        self._cli_env = cli_env  # see infrastructure/claude_env.py
 
     async def complete(
         self, system: str, messages: list[Message], max_tokens: int = 1024
@@ -61,6 +63,7 @@ class ClaudeCodeCliAdapter:
              *STREAM_ARGS,
              *ISOLATION_ARGS],
             stdin=prompt.encode(),
+            env=self._cli_env,
         )
 
     @staticmethod

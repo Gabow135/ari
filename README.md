@@ -152,6 +152,8 @@ python3 -m pytest -m slow           # also runs tests that download a model / hi
 | `ARI_CLAUDE_BIN` | no | `claude` | Path/name of the Claude Code CLI binary |
 | `ARI_OWNER_IDS` | yes* | — | Comma-separated owner Telegram ids: approve access and use coding mode. *Empty blocks everyone |
 | `ARI_SOUL_DIR` | no | `./soul` | Folder holding `SOUL.md` (Ari's identity) |
+| `ARI_CLAUDE_OAUTH_TOKEN` | recommended | — | Ari's own CLI login from `claude setup-token`. Keeps your account (and its email) out of Ari's context |
+| `ARI_CLAUDE_CONFIG_DIR` | no | `./.ari-claude` | Ari's private claude CLI config dir (used with the token) |
 
 No `ANTHROPIC_API_KEY` is used — authentication is handled by the Claude Code CLI.
 

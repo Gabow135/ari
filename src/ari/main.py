@@ -19,6 +19,7 @@ from ari.application.memory_maintainer import MemoryMaintainer
 from ari.config.settings import Settings
 from ari.domain.agent.agent_service import AgentService
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
+from ari.infrastructure.claude_env import claude_cli_env
 from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
 from ari.infrastructure.coder.workspace import Workspace
 from ari.infrastructure.gateway.bot_commands import register_commands
@@ -34,12 +35,22 @@ from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 logging.basicConfig(level=logging.INFO)
 
 
-async def build(settings: Settings):
+def cli_env(settings: Settings) -> dict | None:
+    env = claude_cli_env(settings.claude_oauth_token, settings.claude_config_dir)
+    if env is None:
+        logging.warning("ARI_CLAUDE_OAUTH_TOKEN is not set: Ari runs the claude CLI with "
+                        "the host login, so that account's email is visible to Ari. "
+                        "Run `claude setup-token` and put the token in .env.")
+    return env
+
+
+async def build(settings: Settings, env: dict | None = None):
     embeddings = FastEmbedEmbeddings(settings.embedding_model)
     dim = len((await embeddings.embed(["probe"]))[0])
     conn = await connect(settings.db_path, embedding_dim=dim)
     memory = SqliteMemoryAdapter(conn, embedding_dim=dim)
-    llm = ClaudeCodeCliAdapter(model=settings.model, claude_bin=settings.claude_bin)
+    llm = ClaudeCodeCliAdapter(model=settings.model, claude_bin=settings.claude_bin,
+                               cli_env=env)
     handler = HandleMessage(
         memory=memory, llm=llm, embeddings=embeddings, agent=AgentService(),
         working_memory_size=settings.working_memory_size,
@@ -53,12 +64,13 @@ async def build(settings: Settings):
 
 def main() -> None:
     settings = Settings()
+    env = cli_env(settings)  # computed once: warns once when no token
     lifecycle = Lifecycle(Authorizer(settings.owner_id_set).is_owner)
     # Set by a confirmed /stop or /restart; acted on once run_polling returns.
     exit_request: dict[str, str] = {}
 
     async def _post_init(app):
-        handler, conn = await build(settings)
+        handler, conn = await build(settings, env)
         app.bot_data["handler"] = handler
         app.bot_data["conn"] = conn
         app.bot_data["gate"] = AccessGate(SqliteAccessStore(conn), settings.owner_id_set)
@@ -81,6 +93,7 @@ def main() -> None:
             model=settings.coder_model,
             claude_bin=settings.claude_bin,
             timeout=settings.coding_timeout_seconds,
+            cli_env=env,
         )
         # default_dir: directory of this file's project root (the Ari repo itself)
         default_dir = os.path.dirname(os.path.dirname(os.path.dirname(

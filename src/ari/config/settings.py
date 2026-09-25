@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     coder_model: str = "claude-sonnet-4-6"
     coding_timeout_seconds: int = 900
     soul_dir: str = "./soul"
+    # Ari's own CLI login (`claude setup-token`); keeps the host account out of Ari.
+    claude_oauth_token: str = ""
+    claude_config_dir: str = "./.ari-claude"
 
     @property
     def owner_id_set(self) -> set[str]:

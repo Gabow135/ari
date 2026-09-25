@@ -35,6 +35,7 @@ class ClaudeCodeCoder:
         plan_runner=None,
         exec_runner=None,
         git_env: dict | None = None,
+        cli_env: dict | None = None,
     ):
         self._model = model
         self._bin = resolve_claude_bin(claude_bin)
@@ -44,6 +45,7 @@ class ClaudeCodeCoder:
         # Optional env override for git subprocesses (useful in tests to force
         # commit failures by stripping user identity).
         self._git_env = git_env
+        self._cli_env = cli_env  # see infrastructure/claude_env.py
 
     # ------------------------------------------------------------------
     # CoderPort interface
@@ -115,7 +117,7 @@ class ClaudeCodeCoder:
 
     async def _run(self, argv: list[str], cwd: str) -> str:
         # stream-json: each tool use is emitted as progress while Claude works.
-        return await run_streaming(argv, cwd=cwd, timeout=self._timeout)
+        return await run_streaming(argv, cwd=cwd, timeout=self._timeout, env=self._cli_env)
 
     # ------------------------------------------------------------------
     # Git helpers

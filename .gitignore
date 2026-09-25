@@ -42,3 +42,6 @@ desktop.ini
 # Tooling / SDD scratch (never publish)
 .superpowers/
 .atl/
+
+# Ari's own claude CLI config (ARI_CLAUDE_CONFIG_DIR)
+.ari-claude/
