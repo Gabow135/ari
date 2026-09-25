@@ -147,7 +147,7 @@ src = ["src", "tests"]
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pip install -e ".[dev]"` then `pytest tests/test_smoke.py -v`
+Run: `python3 -m pip install -e ".[dev]"` then `python3 -m pytest tests/test_smoke.py -v`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -1524,7 +1524,7 @@ Expected: PASS
 
 - [ ] **Step 5: Manual smoke test + commit**
 
-Manual: create `.env` from `.env.example` with real `ANTHROPIC_API_KEY` and `TELEGRAM_BOT_TOKEN`, run `python -m ari.main`, message the bot on Telegram, confirm a reply and that a stated fact is recalled in a new chat.
+Manual: create `.env` from `.env.example` with a real `TELEGRAM_BOT_TOKEN` (no API key — auth via `claude login`), run `python3 -m ari.main`, message the bot on Telegram, confirm a reply and that a stated fact is recalled in a new chat.
 
 ```bash
 git add src/ari/main.py src/ari/application/handle_message.py tests/application/test_handle_message_background.py
