@@ -67,7 +67,7 @@ class SqliteScheduleStore:
         async with self._lock:
             rows = await self._conn.execute_fetchall(
                 f"SELECT {_COLS} FROM schedules WHERE status = ? AND next_run_at <= ? "
-                "ORDER BY next_run_at", (ACTIVE, _iso(now)))
+                "ORDER BY next_run_at, id", (ACTIVE, _iso(now)))
             if rows:
                 ids = [r["id"] for r in rows]
                 marks = ",".join("?" * len(ids))
@@ -77,18 +77,28 @@ class SqliteScheduleStore:
         return [replace(_item(r), status=RUNNING) for r in rows]
 
     async def reschedule(self, item_id: int, next_run_at: datetime, now: datetime) -> None:
+        # Guarded by status = RUNNING: an item cancelled mid-flight (e.g. the
+        # user's access was revoked while a task was running) must stay
+        # CANCELLED, never come back to ACTIVE.
         await self._write(
             "UPDATE schedules SET status = ?, next_run_at = ?, failures = 0, last_run_at = ? "
-            "WHERE id = ?", (ACTIVE, _iso(next_run_at), _iso(now), item_id))
+            "WHERE id = ? AND status = ?",
+            (ACTIVE, _iso(next_run_at), _iso(now), item_id, RUNNING))
 
     async def finish(self, item_id: int, now: datetime) -> None:
-        await self._write("UPDATE schedules SET status = ?, last_run_at = ? WHERE id = ?",
-                          (DONE, _iso(now), item_id))
+        # Guarded by status = RUNNING: see reschedule().
+        await self._write(
+            "UPDATE schedules SET status = ?, last_run_at = ? WHERE id = ? AND status = ?",
+            (DONE, _iso(now), item_id, RUNNING))
 
     async def record_failure(self, item_id: int, retry_at: datetime) -> int:
-        await self._write(
+        # Guarded by status = RUNNING: see reschedule(). Returns 0 (never raises)
+        # when the item was cancelled meanwhile, so callers know not to act on it.
+        cur = await self._write(
             "UPDATE schedules SET status = ?, next_run_at = ?, failures = failures + 1 "
-            "WHERE id = ?", (ACTIVE, _iso(retry_at), item_id))
+            "WHERE id = ? AND status = ?", (ACTIVE, _iso(retry_at), item_id, RUNNING))
+        if cur.rowcount == 0:
+            return 0
         return (await self.get(item_id)).failures
 
     async def reset_running(self) -> int:
