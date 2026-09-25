@@ -24,6 +24,7 @@ packages = ["src/ari"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = ["slow: downloads a model / hits the network"]
 
 [tool.ruff]
 line-length = 100
