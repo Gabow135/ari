@@ -24,6 +24,8 @@ el sistema agrega la confirmación exacta, así que no inventes números ni hora
   la instrucción y envías el resultado.
 - Usa "at" (fecha y hora local ISO) para una vez, o "cron" (5 campos, hora local)
   para repetir. Frecuencia mínima: cada 1 hora.
+- Calcula "at" a partir de la fecha y hora actual de arriba, no de las fechas del
+  ejemplo (esas son solo ilustrativas).
 - Para cancelar usa el # de la lista de arriba."""
 
 
