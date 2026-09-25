@@ -1,3 +1,4 @@
+import asyncio
 import json
 import struct
 from datetime import datetime, timezone
@@ -20,6 +21,7 @@ class SqliteMemoryAdapter:
     def __init__(self, conn: aiosqlite.Connection, embedding_dim: int = 1024):
         self._conn = conn
         self._dim = embedding_dim
+        self._write_lock = asyncio.Lock()
 
     async def recent_messages(self, user_id: str, limit: int) -> list[Message]:
         rows = await self._conn.execute_fetchall(
@@ -35,12 +37,13 @@ class SqliteMemoryAdapter:
         return list(reversed(msgs))
 
     async def append_message(self, message: Message) -> None:
-        await self._conn.execute(
-            "INSERT INTO messages (user_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-            (message.user_id, message.role, message.content,
-             message.created_at.isoformat()),
-        )
-        await self._conn.commit()
+        async with self._write_lock:
+            await self._conn.execute(
+                "INSERT INTO messages (user_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+                (message.user_id, message.role, message.content,
+                 message.created_at.isoformat()),
+            )
+            await self._conn.commit()
 
     async def store_recall(
         self, user_id: str, content: str, embedding: list[float], metadata: dict
@@ -49,17 +52,18 @@ class SqliteMemoryAdapter:
             raise ValueError(
                 f"embedding has {len(embedding)} dims, expected {self._dim}"
             )
-        cur = await self._conn.execute(
-            "INSERT INTO recalls (user_id, content, metadata_json, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (user_id, content, json.dumps(metadata), _now()),
-        )
-        recall_id = cur.lastrowid
-        await self._conn.execute(
-            "INSERT INTO recalls_vec (id, user_id, embedding) VALUES (?, ?, ?)",
-            (recall_id, user_id, _pack(embedding)),
-        )
-        await self._conn.commit()
+        async with self._write_lock:
+            cur = await self._conn.execute(
+                "INSERT INTO recalls (user_id, content, metadata_json, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (user_id, content, json.dumps(metadata), _now()),
+            )
+            recall_id = cur.lastrowid
+            await self._conn.execute(
+                "INSERT INTO recalls_vec (id, user_id, embedding) VALUES (?, ?, ?)",
+                (recall_id, user_id, _pack(embedding)),
+            )
+            await self._conn.commit()
 
     async def retrieve_recalls(
         self, user_id: str, query_embedding: list[float], k: int
@@ -92,13 +96,14 @@ class SqliteMemoryAdapter:
         return [Fact(user_id, r["key"], r["value"]) for r in rows]
 
     async def upsert_fact(self, user_id: str, key: str, value: str) -> None:
-        await self._conn.execute(
-            "INSERT INTO facts (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value, "
-            "updated_at=excluded.updated_at",
-            (user_id, key, value, _now()),
-        )
-        await self._conn.commit()
+        async with self._write_lock:
+            await self._conn.execute(
+                "INSERT INTO facts (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value, "
+                "updated_at=excluded.updated_at",
+                (user_id, key, value, _now()),
+            )
+            await self._conn.commit()
 
     async def get_summary(self, user_id: str) -> Summary | None:
         rows = await self._conn.execute_fetchall(
@@ -107,10 +112,11 @@ class SqliteMemoryAdapter:
         return Summary(user_id, rows[0]["content"]) if rows else None
 
     async def upsert_summary(self, user_id: str, content: str) -> None:
-        await self._conn.execute(
-            "INSERT INTO summaries (user_id, content, updated_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET content=excluded.content, "
-            "updated_at=excluded.updated_at",
-            (user_id, content, _now()),
-        )
-        await self._conn.commit()
+        async with self._write_lock:
+            await self._conn.execute(
+                "INSERT INTO summaries (user_id, content, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET content=excluded.content, "
+                "updated_at=excluded.updated_at",
+                (user_id, content, _now()),
+            )
+            await self._conn.commit()

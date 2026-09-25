@@ -1,18 +1,16 @@
 import logging
 
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters
-
-from ari.domain.ports.gateway_port import Handler, IncomingMessage
+from ari.domain.ports.gateway_port import IncomingMessage
 
 log = logging.getLogger("ari.telegram")
 TELEGRAM_LIMIT = 4096
 
 
+# Phase 1: the composition root (main.py) owns the PTB run_polling loop and
+# wires the on-message handler via post_init so the aiosqlite connection is
+# always created inside the same event loop that run_polling drives.
+# TelegramAdapter exposes only the stateless conversion helpers used there.
 class TelegramAdapter:
-    def __init__(self, token: str):
-        self._app = Application.builder().token(token).build()
-
     @staticmethod
     def to_incoming(update) -> IncomingMessage | None:
         msg = getattr(update, "effective_message", None) or getattr(update, "message", None)
@@ -24,16 +22,3 @@ class TelegramAdapter:
     @staticmethod
     def split_text(text: str, limit: int = TELEGRAM_LIMIT) -> list[str]:
         return [text[i:i + limit] for i in range(0, len(text), limit)] or [""]
-
-    async def start(self, handler: Handler) -> None:
-        async def _on_message(update: Update, _context) -> None:
-            incoming = self.to_incoming(update)
-            if incoming is None:
-                log.info("skipping non-text update")
-                return
-            out = await handler(incoming)
-            for part in self.split_text(out.text):
-                await update.effective_message.reply_text(part)
-
-        self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
-        self._app.run_polling()

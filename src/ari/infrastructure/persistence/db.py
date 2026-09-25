@@ -27,6 +27,8 @@ async def connect(db_path: str, embedding_dim: int = 1024) -> aiosqlite.Connecti
     await conn.load_extension(sqlite_vec.loadable_path())
     await conn.enable_load_extension(False)
     conn.row_factory = aiosqlite.Row
+    await conn.execute("PRAGMA journal_mode=WAL;")
+    await conn.execute("PRAGMA busy_timeout=5000;")
     await conn.executescript(_SCHEMA)
     await conn.execute(
         f"CREATE VIRTUAL TABLE IF NOT EXISTS recalls_vec "

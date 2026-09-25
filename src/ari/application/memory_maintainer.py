@@ -36,10 +36,23 @@ class MemoryMaintainer:
             history = await self._memory.recent_messages(user_id, self._threshold + 1)
             if len(history) <= self._threshold:
                 return
-            joined = "\n".join(f"{m.role}: {m.content}" for m in history)
+            prior = await self._memory.get_summary(user_id)
+            parts: list[str] = []
+            if prior is not None:
+                parts.append(f"Previous summary:\n{prior.content}")
+            parts.append(
+                "Recent messages:\n"
+                + "\n".join(f"{m.role}: {m.content}" for m in history)
+            )
+            joined = "\n\n".join(parts)
             probe = [Message(user_id, "user", joined, history[-1].created_at)]
             summary = await self._llm.complete(
-                "Summarize this conversation in a few sentences.", probe, max_tokens=512)
+                "Produce an updated rolling summary of this conversation. "
+                "Incorporate the previous summary (if any) with the recent messages "
+                "so that no earlier context is lost.",
+                probe,
+                max_tokens=512,
+            )
             await self._memory.upsert_summary(user_id, summary)
         except Exception:
             log.exception("summarization failed")
