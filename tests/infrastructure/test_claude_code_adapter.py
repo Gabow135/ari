@@ -50,3 +50,23 @@ async def test_complete_real_cli():
         [Message("u1", "user", "ping", now)],
     )
     assert result  # non-empty response
+
+
+async def test_default_runner_isolates_chat_from_host_setup(monkeypatch):
+    import ari.infrastructure.llm.claude_code_adapter as mod
+    captured = {}
+
+    async def fake_run_streaming(argv, stdin=None, **_kw):
+        captured["argv"] = argv
+        return '{"type": "result", "is_error": false, "result": "ok"}'
+
+    monkeypatch.setattr(mod, "run_streaming", fake_run_streaming)
+    adapter = ClaudeCodeCliAdapter(claude_bin="claude")
+    assert await adapter.complete("sys", [Message("u", "user", "hi",
+                                                  datetime.now(timezone.utc))]) == "ok"
+    argv = captured["argv"]
+    i = argv.index("--tools")
+    assert argv[i + 1] == ""
+    for flag in ("--strict-mcp-config", "--disable-slash-commands"):
+        assert flag in argv
+    assert argv[argv.index("--setting-sources") + 1] == "project"

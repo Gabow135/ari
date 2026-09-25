@@ -7,6 +7,16 @@ from ari.infrastructure.llm.stream_json import STREAM_ARGS, run_streaming
 
 log = logging.getLogger("ari.claude_code")
 
+# Ari's chat must see only Ari's prompt. Without these the CLI injects the host
+# user's own setup into every reply: claude.ai connectors (Gmail, Drive…), their
+# hooks/plugins (e.g. SessionStart instructions), skills, and tool/agent lists.
+ISOLATION_ARGS = [
+    "--tools", "",  # no built-in tools at all (not merely disallowed)
+    "--strict-mcp-config",  # no MCP servers / claude.ai connectors
+    "--setting-sources", "project",  # skip user-level hooks and plugins
+    "--disable-slash-commands",  # no skills
+]
+
 
 class ClaudeCodeCliAdapter:
     """LLMPort backed by the Claude Code CLI in headless mode.
@@ -14,9 +24,9 @@ class ClaudeCodeCliAdapter:
     Uses the CLI's own authentication (e.g. a Claude Code subscription) — it
     does NOT require ANTHROPIC_API_KEY. The `claude` binary must be on PATH.
 
-    Tool isolation: the default runner passes ``--allowed-tools ""`` (empty
-    whitelist), so Claude has no tools available and acts as a pure text
-    responder.  This prevents any filesystem, Bash, or web actions.
+    Isolation: the default runner passes ``ISOLATION_ARGS`` so Claude has no
+    tools (filesystem, Bash, web), no MCP connectors and none of the host
+    user's hooks/plugins/skills — a pure text responder with Ari's prompt only.
     """
 
     def __init__(
@@ -49,7 +59,7 @@ class ClaudeCodeCliAdapter:
              "--model", model,
              "--system-prompt", system,
              *STREAM_ARGS,
-             "--allowed-tools", ""],
+             *ISOLATION_ARGS],
             stdin=prompt.encode(),
         )
 

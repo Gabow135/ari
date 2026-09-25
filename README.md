@@ -87,6 +87,23 @@ While Ari works you see *typing…* and a live progress message (🤔 thinking,
 📖/✏️/▶️ tool steps, the answer as it is written). It is deleted when the final
 reply arrives, so only the answer stays in the chat.
 
+## Soul and capabilities
+
+Ari's identity lives in [`soul/SOUL.md`](soul/SOUL.md): who Ari is, how it
+talks (neutral Spanish, *tuteo*), how it works and its limits. Edit it freely —
+it is re-read when it changes, no restart needed.
+
+What Ari can do comes from one registry,
+[`capabilities.py`](src/ari/domain/agent/capabilities.py). It feeds both Ari's
+prompt ("Tus capacidades", filtered by role: owners see admin commands, other
+users don't) and Telegram's "/" menu. **When you add a feature, add it there**
+and remove whatever it solves from `LIMITATIONS`, so Ari never promises what it
+can't do.
+
+Ari's chat runs the Claude CLI isolated (`--tools ""`, `--strict-mcp-config`,
+`--setting-sources project`, `--disable-slash-commands`), so the host user's
+claude.ai connectors, hooks, plugins and skills never leak into its replies.
+
 ## Access control
 
 Only **owners** (`ARI_OWNER_IDS`) and users an owner approved can talk to Ari.
@@ -134,6 +151,7 @@ python3 -m pytest -m slow           # also runs tests that download a model / hi
 | `ARI_EMBEDDING_MODEL` | no | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | fastembed multilingual model (single-file ONNX) |
 | `ARI_CLAUDE_BIN` | no | `claude` | Path/name of the Claude Code CLI binary |
 | `ARI_OWNER_IDS` | yes* | — | Comma-separated owner Telegram ids: approve access and use coding mode. *Empty blocks everyone |
+| `ARI_SOUL_DIR` | no | `./soul` | Folder holding `SOUL.md` (Ari's identity) |
 
 No `ANTHROPIC_API_KEY` is used — authentication is handled by the Claude Code CLI.
 

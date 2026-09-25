@@ -23,4 +23,4 @@ class RequestCoding:
         plan = await self._coder.plan(instruction, target_dir)
         self._store.put(user_id, PendingAction(instruction, plan))
         return (f"Plan para `{target_dir}`:\n{plan.summary}\n\n"
-                "Respondé *dale* para ejecutar, o *no* para cancelar.")
+                "Responde *dale* para ejecutar, o *no* para cancelar.")

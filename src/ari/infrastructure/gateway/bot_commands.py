@@ -2,19 +2,13 @@ import logging
 
 from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
 
+from ari.domain.agent.capabilities import menu_commands
+
 log = logging.getLogger("ari.telegram")
 
-PUBLIC_COMMANDS = [
-    ("start", "Empezar / pedir acceso"),
-]
-OWNER_COMMANDS = PUBLIC_COMMANDS + [
-    ("code", "Tarea de código: /code [dir:ruta] instrucción"),
-    ("aprobar", "Aprobar acceso: /aprobar CÓDIGO"),
-    ("revocar", "Quitar acceso: /revocar USER_ID"),
-    ("accesos", "Ver solicitudes y accesos"),
-    ("restart", "Reiniciar Ari"),
-    ("stop", "Apagar Ari"),
-]
+# Derived from the capability registry, the same list Ari's prompt is built from.
+PUBLIC_COMMANDS = menu_commands(owner=False)
+OWNER_COMMANDS = menu_commands(owner=True)
 
 
 def _commands(pairs) -> list[BotCommand]:

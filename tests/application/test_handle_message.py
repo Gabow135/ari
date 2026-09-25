@@ -38,3 +38,15 @@ async def test_degrades_when_retrieval_fails():
     handler = _handler(mem=mem, llm=FakeLLM(reply="still answered"))
     out = await handler(IncomingMessage("u1", "c1", "hi"))
     assert out.text == "still answered"
+
+
+async def test_prompt_uses_soul_and_role():
+    llm = FakeLLM(reply="ok")
+    handler = HandleMessage(
+        memory=FakeMemory(), llm=llm, embeddings=FakeEmbeddings(), agent=AgentService(),
+        soul=lambda: "Soy Ari, alma de test.", is_owner=lambda uid: uid == "boss")
+    await handler(IncomingMessage("boss", "c1", "hola"))
+    await handler(IncomingMessage("u2", "c2", "hola"))
+    owner_prompt, user_prompt = llm.calls[0][0], llm.calls[1][0]
+    assert "alma de test" in owner_prompt and "/restart" in owner_prompt
+    assert "alma de test" in user_prompt and "/restart" not in user_prompt

@@ -56,14 +56,14 @@ class AccessGate:
             await self._store.create_pending(user_id, username, code)
             log.info("access requested by %s", _who(user_id, username))
             note = (f"{_who(user_id, username)} pide acceso a Ari.\n"
-                    f"Aprobá con: /aprobar {format_code(code)}")
+                    f"Aprueba con: /aprobar {format_code(code)}")
             notifications = [(owner, note) for owner in sorted(self._owners)]
         else:
             code = rec.code
         return GateResult(
-            reply=("No tenés acceso todavía. Tu código es:\n\n"
+            reply=("No tienes acceso todavía. Tu código es:\n\n"
                    f"{format_code(code)}\n\n"
-                   "Pasáselo al administrador para que te habilite."),
+                   "Pásaselo al administrador para que te habilite."),
             notifications=notifications,
         )
 
@@ -91,7 +91,7 @@ class AccessGate:
         log.info("access approved for %s", _who(rec.user_id, rec.username))
         return GateResult(
             reply=f"Listo, {_who(rec.user_id, rec.username)} ya tiene acceso.",
-            notifications=[(rec.user_id, "¡Ya tenés acceso! Escribime cuando quieras.")],
+            notifications=[(rec.user_id, "¡Ya tienes acceso! Escríbeme cuando quieras.")],
         )
 
     async def _revoke(self, arg: str) -> GateResult:

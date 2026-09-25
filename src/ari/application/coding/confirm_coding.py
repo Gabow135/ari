@@ -38,7 +38,7 @@ class ConfirmCoding:
                 files = ", ".join(result.changed_files) or "(sin cambios)"
                 commits = ", ".join(result.commits) or "(sin commits)"
                 await report(f"Listo en `{branch}`. Archivos: {files}. Commits: {commits}. "
-                             "El push/PR/merge quedan para vos.")
+                             "El push/PR/merge quedan para ti.")
             else:
                 await report(f"El trabajo en `{branch}` falló: {result.detail[:300]}. "
                              "Dejé el branch para que lo revises.")

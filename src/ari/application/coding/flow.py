@@ -22,11 +22,11 @@ async def route_message(text: str, user_id: str, deps: CodingDeps) -> str | None
             # Guard is SYNCHRONOUS: pop + mark_busy before scheduling so two
             # rapid "dale" messages cannot both see a pending action.
             if deps.pending_store.is_busy(user_id):
-                return "Ya hay un trabajo en curso para vos; esperá a que termine."
+                return "Ya hay un trabajo en curso para ti; espera a que termine."
             action = deps.pending_store.pop(user_id)
             if action is None:
                 # Raced with another confirm that already popped it.
-                return "Ya hay un trabajo en curso para vos; esperá a que termine."
+                return "Ya hay un trabajo en curso para ti; espera a que termine."
             deps.pending_store.mark_busy(user_id)
             deps.scheduler(deps.confirm_coding(user_id, action))
             return "Dale, arranco. Te aviso cuando termine."
@@ -39,7 +39,7 @@ async def route_message(text: str, user_id: str, deps: CodingDeps) -> str | None
         if not deps.authorizer.is_owner(user_id):
             return "El modo código es solo para el dueño; no estás autorizado."
         if deps.pending_store.is_busy(user_id):
-            return "Ya tengo un trabajo en curso para vos; esperá a que termine."
+            return "Ya tengo un trabajo en curso para ti; espera a que termine."
         instruction_text, target = cmd
         return await deps.request_coding(user_id, instruction_text, target)
     return await deps.chat(text, user_id)

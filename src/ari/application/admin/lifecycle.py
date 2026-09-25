@@ -8,8 +8,8 @@ RESTART = "restart"
 LIFECYCLE_COMMANDS = (STOP, RESTART)
 
 _ASK = {
-    STOP: "¿Apago Ari? Respondé «dale» en 60 s para confirmar.",
-    RESTART: "¿Reinicio Ari? Respondé «dale» en 60 s para confirmar.",
+    STOP: "¿Apago Ari? Responde «dale» en 60 s para confirmar.",
+    RESTART: "¿Reinicio Ari? Responde «dale» en 60 s para confirmar.",
 }
 _GO = {STOP: "Apagando Ari…", RESTART: "Reiniciando…"}
 
@@ -46,7 +46,7 @@ class Lifecycle:
         if self._clock() > deadline:
             if is_affirmative(text):
                 return Confirmation(
-                    handled=True, reply=f"La confirmación venció; mandá /{action} de nuevo.")
+                    handled=True, reply=f"La confirmación venció; manda /{action} de nuevo.")
             return Confirmation()
         if is_affirmative(text):
             return Confirmation(handled=True, action=action, reply=_GO[action])

@@ -28,6 +28,7 @@ from ari.infrastructure.llm.claude_code_adapter import ClaudeCodeCliAdapter
 from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import connect
+from ari.infrastructure.soul.soul_loader import SoulLoader
 from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
@@ -44,6 +45,8 @@ async def build(settings: Settings):
         working_memory_size=settings.working_memory_size,
         recall_top_k=settings.recall_top_k,
         maintainer=MemoryMaintainer(memory, llm),
+        soul=SoulLoader(settings.soul_dir),
+        is_owner=Authorizer(settings.owner_id_set).is_owner,
     )
     return handler, conn
 
@@ -211,7 +214,7 @@ def main() -> None:
         if msg is None or msg.from_user is None:
             return
         if await _admit(msg):
-            await msg.reply_text("¡Hola! Escribime cuando quieras.")
+            await msg.reply_text("¡Hola! Escríbeme cuando quieras.")
 
     async def _on_access_admin(update, _context) -> None:
         """Owner-only /aprobar, /revocar, /accesos."""

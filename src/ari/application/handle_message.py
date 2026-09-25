@@ -10,14 +10,14 @@ from ari.domain.ports.gateway_port import IncomingMessage, OutgoingMessage
 from ari.domain.ports.llm_port import LLMPort
 
 log = logging.getLogger("ari.handle_message")
-BLANK_REPLY = "Mandame un mensaje de texto y con gusto te ayudo."
+BLANK_REPLY = "Mándame un mensaje de texto y con gusto te ayudo."
 
 
 class HandleMessage:
     def __init__(self, memory: MemoryPort, llm: LLMPort,
                  embeddings: EmbeddingsPort, agent: AgentService,
                  working_memory_size: int = 20, recall_top_k: int = 5,
-                 maintainer=None, scheduler=None):
+                 maintainer=None, scheduler=None, soul=None, is_owner=None):
         self._memory = memory
         self._llm = llm
         self._embeddings = embeddings
@@ -26,6 +26,8 @@ class HandleMessage:
         self._k = recall_top_k
         self._maintainer = maintainer
         self._schedule = scheduler or (lambda coro: asyncio.create_task(coro))
+        self._soul = soul or (lambda: None)  # () -> SOUL.md text | None
+        self._is_owner = is_owner or (lambda _uid: False)
 
     async def __call__(self, incoming: IncomingMessage) -> OutgoingMessage:
         text = incoming.text.strip()
@@ -41,7 +43,9 @@ class HandleMessage:
         summary = await self._safe(self._memory.get_summary(incoming.user_id), None)
         recalls = await self._retrieve(incoming.user_id, text)
 
-        system = self._agent.build_prompt(facts, summary, recalls)
+        system = self._agent.build_prompt(
+            facts, summary, recalls, soul=self._soul(),
+            is_owner=self._is_owner(incoming.user_id))
         reply = await self._llm.complete(system, history)
 
         await self._memory.append_message(

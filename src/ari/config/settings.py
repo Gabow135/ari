@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     allowed_root: str = "."
     coder_model: str = "claude-sonnet-4-6"
     coding_timeout_seconds: int = 900
+    soul_dir: str = "./soul"
 
     @property
     def owner_id_set(self) -> set[str]:
