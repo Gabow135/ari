@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from ari.application.schedule.run_due_items import RunDueItems
-from ari.domain.schedule.entities import ACTIVE, DONE, PAUSED, REMINDER, TASK
+from ari.domain.schedule.entities import ACTIVE, CANCELLED, DONE, PAUSED, REMINDER, TASK
 from ari.infrastructure.persistence.db import connect
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 
@@ -96,6 +96,24 @@ async def test_task_failures_retry_then_pause(store):
         clock.now += timedelta(minutes=6)
     assert (await store.get(tid)).status == PAUSED
     assert paused == [(tid, "claude caído")]
+    assert sent == []
+
+
+async def test_failure_after_item_cancelled_meanwhile_stays_cancelled(store):
+    """The user's access could be revoked (cancel_user) while their task is
+    RUNNING. record_failure then no-ops (returns 0): the task must end up
+    CANCELLED, and on_paused (which would notify/pause) must never fire."""
+    tid = await store.add("u1", "c1", TASK, "x", T0, None)
+
+    async def boom_and_cancel(item):
+        await store.cancel_user(item.user_id)
+        raise RuntimeError("claude caído")
+
+    due, sent, paused = _runner(store, Clock(T0), run_task=boom_and_cancel)
+    await due()
+    await due.drain()
+    assert (await store.get(tid)).status == CANCELLED
+    assert paused == []
     assert sent == []
 
 

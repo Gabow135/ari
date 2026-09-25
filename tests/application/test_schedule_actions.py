@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from ari.application.schedule.schedule_actions import ScheduleActions, extract_actions
-from ari.domain.schedule.entities import CANCELLED, REMINDER
+from ari.domain.schedule.entities import CANCELLED, REMINDER, RUNNING
 from ari.infrastructure.persistence.db import connect
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 
@@ -76,6 +76,14 @@ async def test_cancel_own_but_not_foreign(actions, store):
     assert "No encontré el #1" in foreign
     own = await actions.apply("u1", "c1", '<ari-action>{"type":"cancel","id":1}</ari-action>')
     assert "🗑️ Cancelado #1" in own
+    assert (await store.get(1)).status == CANCELLED
+
+
+async def test_cancel_running_item(actions, store):
+    await actions.apply("u1", "c1", REMIND)
+    await store.set_status(1, RUNNING)
+    out = await actions.apply("u1", "c1", '<ari-action>{"type":"cancel","id":1}</ari-action>')
+    assert "🗑️ Cancelado #1" in out
     assert (await store.get(1)).status == CANCELLED
 
 

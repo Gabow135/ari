@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from ari.domain.schedule.actions import (
     ActionError, CancelAction, describe_cron, next_cron_run, parse_action)
-from ari.domain.schedule.entities import ACTIVE, CANCELLED, PAUSED, REMINDER, ScheduleItem
+from ari.domain.schedule.entities import ACTIVE, CANCELLED, PAUSED, REMINDER, RUNNING, ScheduleItem
 from ari.domain.schedule.timefmt import fmt_long, fmt_short
 
 log = logging.getLogger("ari.schedule")
@@ -80,7 +80,8 @@ class ScheduleActions:
             return f"⚠️ No pude agendarlo: {reason}."
         if isinstance(action, CancelAction):
             item = await self._store.get(action.id)
-            if item is None or item.user_id != user_id or item.status not in (ACTIVE, PAUSED):
+            if (item is None or item.user_id != user_id
+                    or item.status not in (ACTIVE, PAUSED, RUNNING)):
                 return f"⚠️ No encontré el #{action.id} entre tus recordatorios."
             await self._store.set_status(item.id, CANCELLED)
             return f"🗑️ Cancelado #{item.id}: {item.text}"

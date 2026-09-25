@@ -53,10 +53,16 @@ class RunDueItems:
             reply = await self._run(item)
         except Exception as exc:  # noqa: BLE001 — isolate each item
             log.exception("scheduled task #%s failed", item.id)
-            failures = await self._store.record_failure(item.id, now + RETRY)
-            if failures >= MAX_FAILURES:
-                await self._store.set_status(item.id, PAUSED)
-                await self._on_paused(item, str(exc)[:200])
+            try:
+                # record_failure returns 0 if the item is no longer RUNNING
+                # (e.g. its user's access was revoked mid-flight, cancelling
+                # it): nothing to pause or notify about in that case.
+                failures = await self._store.record_failure(item.id, now + RETRY)
+                if failures >= MAX_FAILURES:
+                    await self._store.set_status(item.id, PAUSED)
+                    await self._on_paused(item, str(exc)[:200])
+            except Exception:  # noqa: BLE001 — never let the failure path itself
+                log.exception("scheduled task #%s: failure handling itself failed", item.id)
             return
         try:
             await self._send(item.chat_id, f"🔁 Tarea #{item.id}: {reply}")
