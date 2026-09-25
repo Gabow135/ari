@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import time
 
 from ari.domain.ports.progress_port import TEXT, THINKING, TOOL, ProgressEvent, current_progress
@@ -8,6 +9,18 @@ log = logging.getLogger("ari.telegram")
 
 _MAX_STEPS = 8
 _MAX_TEXT = 2500  # tail of the partial answer shown; keeps us under 4096
+# Action blocks (<ari-action>{...}</ari-action>) are plumbing for
+# ari.application.schedule.schedule_actions, never meant for the user's eyes.
+# Kept as a small local regex rather than importing extract_actions from the
+# application layer: infrastructure has no existing dependency on application
+# elsewhere in this codebase, and this presentation-only concern (hide partial
+# JSON while it streams) doesn't warrant introducing that coupling.
+_ACTION_BLOCK = re.compile(r"<ari-action>.*?</ari-action>", re.S | re.I)
+_ACTION_DANGLING = re.compile(r"<ari-action>.*\Z", re.S | re.I)
+
+
+def _hide_actions(text: str) -> str:
+    return _ACTION_DANGLING.sub("", _ACTION_BLOCK.sub("", text))
 _TOOL_LABELS = {
     "Read": "📖 Leyendo", "Edit": "✏️ Editando", "Write": "✏️ Escribiendo",
     "MultiEdit": "✏️ Editando", "Bash": "▶️ Ejecutando", "Grep": "🔎 Buscando",
@@ -93,7 +106,7 @@ class ProgressMessage:
 
     def _render(self) -> str:
         lines = self._steps[-_MAX_STEPS:]
-        text = self._text.strip()
+        text = _hide_actions(self._text).strip()
         if text:
             if len(text) > _MAX_TEXT:
                 text = "…" + text[-_MAX_TEXT:]

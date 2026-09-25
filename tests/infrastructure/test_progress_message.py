@@ -110,6 +110,18 @@ async def test_message_sent_while_closing_is_still_deleted():
     assert bot.sent and bot.deleted == [99]
 
 
+async def test_action_blocks_never_shown_while_streaming():
+    bot = _FakeBot()
+    async with ProgressMessage(bot, 1, min_interval=0.01):
+        emit_progress(ProgressEvent(TEXT, detail='Listo <ari-action>{"type":'))
+        await _settle()
+        emit_progress(ProgressEvent(TEXT, detail='"reminder"}</ari-action> extra'))
+        await _settle()
+    shown = "\n".join(bot.sent + bot.edits)
+    assert "<ari-action>" not in shown
+    assert "Listo" in shown
+
+
 async def test_internal_tools_hidden_and_labels_are_friendly():
     bot = _FakeBot()
     async with ProgressMessage(bot, 1, min_interval=0.01):
