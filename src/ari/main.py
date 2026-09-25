@@ -45,6 +45,10 @@ from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
 
+# How long shutdown waits for in-flight scheduled tasks (RunDueItems background
+# tasks) to finish before giving up and closing the DB connection anyway.
+_DRAIN_TIMEOUT = 30
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -175,6 +179,7 @@ def main() -> None:
             return out.text
 
         due = RunDueItems(c.schedule_store, send, run_task, notices.task_paused, tz, _utcnow)
+        app.bot_data["due"] = due
         heartbeat = Heartbeat(
             llm=c.llm, memory=c.memory, store=c.schedule_store, agent=c.agent,
             soul=c.soul, checklist=SoulLoader(settings.soul_dir, "HEARTBEAT.md"),
@@ -189,6 +194,14 @@ def main() -> None:
         scheduler = app.bot_data.get("scheduler")
         if scheduler is not None:
             await scheduler.stop()
+        due = app.bot_data.get("due")
+        if due is not None:
+            try:
+                await asyncio.wait_for(due.drain(), timeout=_DRAIN_TIMEOUT)
+            except asyncio.TimeoutError:
+                logging.warning(
+                    "timed out after %ss draining in-flight scheduled tasks; "
+                    "closing the DB anyway", _DRAIN_TIMEOUT)
         conn = app.bot_data.get("conn")
         if conn is not None:
             await conn.close()
