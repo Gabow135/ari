@@ -37,3 +37,12 @@ async def test_list_all(store):
     await store.create_pending("u1", "a", "AAAA2222")
     await store.create_pending("u2", "b", "BBBB3333")
     assert {r.user_id for r in await store.list_all()} == {"u1", "u2"}
+
+
+async def test_pending_since_lists_only_pending_with_creation_time(store):
+    await store.create_pending("u1", "a", "AAAA2222")
+    await store.create_pending("u2", "b", "BBBB3333")
+    await store.set_status("u2", APPROVED)
+    rows = await store.pending_since()
+    assert [(r.user_id, type(ts).__name__) for r, ts in rows] == [("u1", "datetime")]
+    assert rows[0][1].tzinfo is not None

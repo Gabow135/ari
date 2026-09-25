@@ -22,6 +22,16 @@ CREATE TABLE IF NOT EXISTS summaries (
 CREATE TABLE IF NOT EXISTS access (
   user_id TEXT PRIMARY KEY, username TEXT, code TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS schedules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, chat_id TEXT NOT NULL,
+  kind TEXT NOT NULL, text TEXT NOT NULL, next_run_at TEXT NOT NULL, cron TEXT,
+  status TEXT NOT NULL, failures INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL, last_run_at TEXT);
+CREATE INDEX IF NOT EXISTS idx_schedules_due ON schedules(status, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_schedules_user ON schedules(user_id, status);
+
+CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
 

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
-from ari.domain.access.entities import AccessRecord
+from ari.domain.access.entities import PENDING, AccessRecord
 
 
 def _now() -> str:
@@ -56,3 +56,9 @@ class SqliteAccessStore:
         rows = await self._conn.execute_fetchall(
             "SELECT user_id, username, code, status FROM access ORDER BY created_at")
         return [_record(r) for r in rows]
+
+    async def pending_since(self) -> list[tuple[AccessRecord, datetime]]:
+        rows = await self._conn.execute_fetchall(
+            "SELECT user_id, username, code, status, created_at FROM access "
+            "WHERE status = ? ORDER BY created_at", (PENDING,))
+        return [(_record(r), datetime.fromisoformat(r["created_at"])) for r in rows]
