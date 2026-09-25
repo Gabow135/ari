@@ -17,7 +17,8 @@ class HandleMessage:
     def __init__(self, memory: MemoryPort, llm: LLMPort,
                  embeddings: EmbeddingsPort, agent: AgentService,
                  working_memory_size: int = 20, recall_top_k: int = 5,
-                 maintainer=None, scheduler=None, soul=None, is_owner=None):
+                 maintainer=None, scheduler=None, soul=None, is_owner=None,
+                 actions=None):
         self._memory = memory
         self._llm = llm
         self._embeddings = embeddings
@@ -28,8 +29,10 @@ class HandleMessage:
         self._schedule = scheduler or (lambda coro: asyncio.create_task(coro))
         self._soul = soul or (lambda: None)  # () -> SOUL.md text | None
         self._is_owner = is_owner or (lambda _uid: False)
+        self._actions = actions  # ScheduleActions | None
 
-    async def __call__(self, incoming: IncomingMessage) -> OutgoingMessage:
+    async def __call__(self, incoming: IncomingMessage,
+                       allow_actions: bool = True) -> OutgoingMessage:
         text = incoming.text.strip()
         if not text:
             return OutgoingMessage(incoming.chat_id, BLANK_REPLY)
@@ -43,10 +46,16 @@ class HandleMessage:
         summary = await self._safe(self._memory.get_summary(incoming.user_id), None)
         recalls = await self._retrieve(incoming.user_id, text)
 
+        extra = await self._actions.context(incoming.user_id) if self._actions else None
         system = self._agent.build_prompt(
             facts, summary, recalls, soul=self._soul(),
-            is_owner=self._is_owner(incoming.user_id))
+            is_owner=self._is_owner(incoming.user_id), extra=extra)
         reply = await self._llm.complete(system, history)
+        if self._actions is not None:
+            # Action blocks become stored items + confirmations; only honored for
+            # the user's own messages (allow_actions=False for scheduled runs).
+            reply = await self._actions.apply(incoming.user_id, incoming.chat_id, reply,
+                                              allow=allow_actions)
 
         await self._memory.append_message(
             Message(incoming.user_id, "assistant", reply, datetime.now(timezone.utc)))

@@ -42,3 +42,8 @@ def test_user_prompt_hides_admin_commands():
     prompt = AgentService().build_prompt([], None, [], is_owner=False)
     assert "/restart" not in prompt and "/aprobar" not in prompt
     assert "creador" in prompt.lower()  # knows who created it, but isn't talking to them
+
+
+def test_extra_section_is_appended():
+    prompt = AgentService().build_prompt([], None, [], extra="## Fecha y hora actual\nhoy")
+    assert "## Fecha y hora actual\nhoy" in prompt

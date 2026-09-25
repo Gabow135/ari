@@ -19,10 +19,12 @@ class AgentService:
 
     def build_prompt(self, facts: list[Fact], summary: Summary | None,
                      recalls: list[Recall], soul: str | None = None,
-                     is_owner: bool = False) -> str:
+                     is_owner: bool = False, extra: str | None = None) -> str:
         parts = [soul.strip() if soul and soul.strip() else self.SYSTEM_PREAMBLE,
                  _WITH_OWNER if is_owner else _WITH_USER,
                  render_capabilities(is_owner)]
+        if extra:
+            parts.append(extra)
         if facts:
             lines = "\n".join(f"- {f.key}: {f.value}" for f in facts)
             parts.append(f"## Lo que sabes del usuario\n{lines}")
