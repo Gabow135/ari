@@ -34,3 +34,7 @@ htmlcov/
 *.swp
 .idea/
 .vscode/
+
+# Tooling / SDD scratch (never publish)
+.superpowers/
+.atl/
