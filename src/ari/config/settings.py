@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # Ari's own CLI login (`claude setup-token`); keeps the host account out of Ari.
     claude_oauth_token: str = ""
     claude_config_dir: str = "./.ari-claude"
+    # Proactivity
+    timezone: str = "America/Guayaquil"
+    quiet_hours: str = "22-7"  # local hours "start-end"; empty = none
+    heartbeat_minutes: int = 60  # 0 disables the heartbeat
+    max_items_per_user: int = 20
 
     @property
     def owner_id_set(self) -> set[str]:
