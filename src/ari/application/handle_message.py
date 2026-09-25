@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -15,13 +16,16 @@ BLANK_REPLY = "Mandame un mensaje de texto y con gusto te ayudo."
 class HandleMessage:
     def __init__(self, memory: MemoryPort, llm: LLMPort,
                  embeddings: EmbeddingsPort, agent: AgentService,
-                 working_memory_size: int = 20, recall_top_k: int = 5):
+                 working_memory_size: int = 20, recall_top_k: int = 5,
+                 maintainer=None, scheduler=None):
         self._memory = memory
         self._llm = llm
         self._embeddings = embeddings
         self._agent = agent
         self._n = working_memory_size
         self._k = recall_top_k
+        self._maintainer = maintainer
+        self._schedule = scheduler or (lambda coro: asyncio.create_task(coro))
 
     async def __call__(self, incoming: IncomingMessage) -> OutgoingMessage:
         text = incoming.text.strip()
@@ -43,6 +47,11 @@ class HandleMessage:
         await self._memory.append_message(
             Message(incoming.user_id, "assistant", reply, datetime.now(timezone.utc)))
         await self._store_recall(incoming.user_id, text, reply)
+
+        if self._maintainer is not None:
+            self._schedule(self._maintainer.extract_facts(incoming.user_id, text))
+            self._schedule(self._maintainer.maybe_summarize(incoming.user_id))
+
         return OutgoingMessage(incoming.chat_id, reply)
 
     async def _retrieve(self, user_id, text):
