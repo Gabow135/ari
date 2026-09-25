@@ -31,7 +31,10 @@ class RunDueItems:
                 self._inflight.add(task)
                 task.add_done_callback(self._inflight.discard)
             else:
-                await self._remind(item, now)
+                try:
+                    await self._remind(item, now)
+                except Exception:  # noqa: BLE001 — isolate each item
+                    log.exception("reminder #%s failed", item.id)
 
     async def drain(self) -> None:
         await asyncio.gather(*list(self._inflight), return_exceptions=True)
@@ -55,8 +58,11 @@ class RunDueItems:
                 await self._store.set_status(item.id, PAUSED)
                 await self._on_paused(item, str(exc)[:200])
             return
-        await self._send(item.chat_id, f"🔁 Tarea #{item.id}: {reply}")
-        await self._advance(item, now)
+        try:
+            await self._send(item.chat_id, f"🔁 Tarea #{item.id}: {reply}")
+            await self._advance(item, now)
+        except Exception:  # noqa: BLE001 — isolate each item
+            log.exception("scheduled task #%s: delivery/reschedule failed", item.id)
 
     async def _advance(self, item: ScheduleItem, now) -> None:
         if item.cron:

@@ -114,3 +114,28 @@ async def test_slow_task_does_not_delay_reminders(store):
     release.set()
     await due.drain()
     assert any(t.startswith("🔁 Tarea") for _, t in sent)
+
+
+async def test_store_failure_on_one_item_does_not_stop_others(store):
+    rid1 = await store.add("u1", "c1", REMINDER, "primer", T0, None)
+    rid2 = await store.add("u1", "c1", REMINDER, "segundo", T0, None)
+
+    original_finish = store.finish
+    async def finish_with_failure(item_id, now):
+        if item_id == rid1:
+            raise RuntimeError("storage corrupted")
+        return await original_finish(item_id, now)
+
+    store.finish = finish_with_failure
+    due, sent, _ = _runner(store, Clock(T0 + timedelta(seconds=20)))
+    await due()
+
+    # Both reminders should have been sent despite first one's store failure
+    assert len(sent) == 2
+    assert ("c1", "⏰ Recordatorio: primer") in sent
+    assert ("c1", "⏰ Recordatorio: segundo") in sent
+
+    # Second item should be DONE
+    assert (await store.get(rid2)).status == DONE
+    # First item should still be RUNNING (finish failed)
+    assert (await store.get(rid1)).status != DONE
