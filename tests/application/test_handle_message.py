@@ -64,6 +64,22 @@ class _FakeActions:
         return reply.replace("<blk>", "") + " ✅"
 
 
+class _BrokenContextActions:
+    async def context(self, user_id):
+        raise RuntimeError("db is down")
+
+    async def apply(self, user_id, chat_id, reply, allow=True):
+        return reply
+
+
+async def test_context_read_failure_does_not_break_the_reply():
+    llm = FakeLLM(reply="hello back")
+    handler = HandleMessage(memory=FakeMemory(), llm=llm, embeddings=FakeEmbeddings(),
+                            agent=AgentService(), actions=_BrokenContextActions())
+    out = await handler(IncomingMessage("u1", "c1", "hola"))
+    assert out.text == "hello back"
+
+
 async def test_actions_context_in_prompt_and_reply_processed():
     llm = FakeLLM(reply="hecho<blk>")
     acts = _FakeActions()

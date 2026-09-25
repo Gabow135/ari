@@ -46,7 +46,8 @@ class HandleMessage:
         summary = await self._safe(self._memory.get_summary(incoming.user_id), None)
         recalls = await self._retrieve(incoming.user_id, text)
 
-        extra = await self._actions.context(incoming.user_id) if self._actions else None
+        extra = (await self._safe(self._actions.context(incoming.user_id), None)
+                 if self._actions else None)
         system = self._agent.build_prompt(
             facts, summary, recalls, soul=self._soul(),
             is_owner=self._is_owner(incoming.user_id), extra=extra)
