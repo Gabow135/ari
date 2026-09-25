@@ -8,6 +8,7 @@ import os
 _background_tasks: set = set()
 
 from ari.application.access.gate import ADMIN_COMMANDS, AccessGate, deliver
+from ari.application.admin.lifecycle import LIFECYCLE_COMMANDS, RESTART, Lifecycle
 from ari.application.coding.authorizer import Authorizer
 from ari.application.coding.confirm_coding import ConfirmCoding
 from ari.application.coding.flow import CodingDeps, route_message
@@ -25,6 +26,7 @@ from ari.infrastructure.llm.claude_code_adapter import ClaudeCodeCliAdapter
 from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import connect
+from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
 
@@ -46,6 +48,9 @@ async def build(settings: Settings):
 
 def main() -> None:
     settings = Settings()
+    lifecycle = Lifecycle(Authorizer(settings.owner_id_set).is_owner)
+    # Set by a confirmed /stop or /restart; acted on once run_polling returns.
+    exit_request: dict[str, str] = {}
 
     async def _post_init(app):
         handler, conn = await build(settings)
@@ -55,6 +60,13 @@ def main() -> None:
         if not settings.owner_id_set:
             logging.warning("ARI_OWNER_IDS is empty: nobody can approve access, "
                             "so every Telegram user will be blocked")
+        notify_chat = os.environ.pop(RESTART_NOTIFY_ENV, None)
+        if notify_chat:
+            try:
+                await app.bot.send_message(chat_id=int(notify_chat),
+                                           text="Listo, Ari está de vuelta.")
+            except Exception as exc:  # noqa: BLE001 — best-effort notification
+                logging.warning("could not send restart notice: %s", exc)
 
         # Coding infrastructure
         store = PendingStore()
@@ -119,11 +131,20 @@ def main() -> None:
             return
         if not await _admit(msg):
             return
+        user_id = str(msg.from_user.id)
+
+        # A reply to a pending /stop or /restart is consumed here.
+        confirmation = lifecycle.confirm(text, user_id)
+        if confirmation.handled:
+            await _reply_parts(msg, confirmation.reply)
+            if confirmation.action is not None:
+                exit_request.update(action=confirmation.action, chat=user_id)
+                app.stop_running()
+            return
 
         message_handler = app.bot_data["handler"]
         base_deps = app.bot_data["coding_deps"]
         confirm = app.bot_data["confirm"]
-        user_id = str(msg.from_user.id)
 
         async def report(reply_text: str) -> None:
             for part in TelegramAdapter.split_text(reply_text):
@@ -189,12 +210,26 @@ def main() -> None:
         result = await app.bot_data["gate"].admin_command(msg.text, str(msg.from_user.id))
         await deliver(result, lambda t: _reply_parts(msg, t), _send)
 
+    async def _on_lifecycle(update, _context) -> None:
+        """Owner-only /stop and /restart; the next message confirms or cancels."""
+        msg = update.effective_message
+        if msg is None or msg.from_user is None:
+            return
+        action = msg.text.strip().split()[0].lstrip("/").split("@")[0].lower()
+        await _reply_parts(msg, lifecycle.request(action, str(msg.from_user.id)))
+
     # Slash commands reach _on_command; plain text reaches _on_message.
     app.add_handler(CommandHandler("start", _on_start))
     app.add_handler(CommandHandler(list(ADMIN_COMMANDS), _on_access_admin))
+    app.add_handler(CommandHandler(list(LIFECYCLE_COMMANDS), _on_lifecycle))
     app.add_handler(CommandHandler(["code", "fase2"], _on_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
     app.run_polling()
+
+    # run_polling returned: shutdown (incl. closing the DB) is complete.
+    if exit_request.get("action") == RESTART:
+        logging.info("restarting Ari")
+        relaunch(exit_request["chat"])
 
 
 if __name__ == "__main__":

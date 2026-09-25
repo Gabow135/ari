@@ -99,6 +99,18 @@ and approved). Approvals persist in the SQLite `access` table.
 > If it is empty nobody can approve, so **every user is blocked**. Owners must
 > have opened a chat with the bot once to receive access notifications.
 
+## Stop / restart from Telegram
+
+Owners can send `/stop` or `/restart`; Ari asks for confirmation and acts only
+if you reply `dale` (or `sí`/`ok`) within 60 s — any other reply cancels.
+
+- `/stop` shuts Ari down cleanly. Start it again from the host machine.
+- `/restart` shuts down cleanly and relaunches `python -m ari.main` with the same
+  interpreter (so it picks up code changes), then messages you
+  "Listo, Ari está de vuelta." On macOS/Linux the process is replaced in place
+  (same PID, supervisor-friendly); on Windows a new process starts in the same
+  console.
+
 ## Test
 
 ```bash

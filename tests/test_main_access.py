@@ -1,4 +1,5 @@
 """Wiring test: main() must run the access gate before routing any message."""
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -19,11 +20,18 @@ class _FakeApp:
 
         self.bot = SimpleNamespace(send_message=send_message)
 
+        self.script = None  # async fn(app) run inside run_polling, like live updates
+        self.stopped = False
+
     def add_handler(self, h):
         self.handlers.append(h)
 
+    def stop_running(self):
+        self.stopped = True
+
     def run_polling(self):
-        pass
+        if self.script is not None:
+            asyncio.run(self.script(self))
 
 
 class _FakeBuilder:
@@ -110,3 +118,63 @@ async def test_approved_user_reaches_routing(wired):
         _update(42, f"/aprobar {code}", []), None)
     await on_message(_update(7, "hola otra vez", replies), None)
     assert routed == [("hola otra vez", "7")]
+
+
+# --- /stop and /restart -----------------------------------------------------
+
+def _run_main_with(monkeypatch, steps):
+    """Run main() with a fake app whose polling loop feeds ``steps``: a list of
+    (command_or_None, user_id, text). Returns (app, relaunches, replies)."""
+    app = _FakeApp()
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    monkeypatch.setenv("ARI_OWNER_IDS", "42")
+    monkeypatch.setattr(telegram.ext.Application, "builder", lambda: _FakeBuilder(app))
+    relaunches, replies = [], []
+    monkeypatch.setattr(main_mod, "relaunch", lambda chat: relaunches.append(chat))
+
+    async def fake_route(text, user_id, deps):
+        return "chat"
+
+    monkeypatch.setattr(main_mod, "route_message", fake_route)
+
+    async def script(a):
+        conn = await connect(":memory:", embedding_dim=4)
+        a.bot_data.update(
+            gate=AccessGate(SqliteAccessStore(conn), owner_ids={"42"}),
+            handler=None, confirm=None,
+            coding_deps=main_mod.CodingDeps(None, None, None, None, None, None))
+        for command, uid, text in steps:
+            if command is None:
+                cb = _callback(a, telegram.ext.MessageHandler)
+            else:
+                cb = _callback(a, telegram.ext.CommandHandler, command)
+            await cb(_update(uid, text, replies), None)
+        await conn.close()
+
+    app.script = script
+    main_mod.main()
+    return app, relaunches, replies
+
+
+def test_stop_needs_confirmation(monkeypatch):
+    app, relaunches, replies = _run_main_with(monkeypatch, [("stop", 42, "/stop")])
+    assert not app.stopped and relaunches == []
+    assert "dale" in replies[-1].lower()
+
+
+def test_confirmed_stop_stops_without_relaunch(monkeypatch):
+    app, relaunches, _ = _run_main_with(
+        monkeypatch, [("stop", 42, "/stop"), (None, 42, "dale")])
+    assert app.stopped and relaunches == []
+
+
+def test_confirmed_restart_stops_then_relaunches(monkeypatch):
+    app, relaunches, _ = _run_main_with(
+        monkeypatch, [("restart", 42, "/restart"), (None, 42, "dale")])
+    assert app.stopped and relaunches == ["42"]
+
+
+def test_non_owner_cannot_stop(monkeypatch):
+    app, _, replies = _run_main_with(
+        monkeypatch, [("stop", 7, "/stop"), (None, 7, "dale")])
+    assert not app.stopped

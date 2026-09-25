@@ -15,4 +15,5 @@ def test_phase2_settings(monkeypatch):
 def test_owner_id_set_empty_when_unset(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tg")
     monkeypatch.delenv("ARI_OWNER_IDS", raising=False)
-    assert Settings().owner_id_set == set()
+    # _env_file=None: ignore the developer's real .env, which may set owners.
+    assert Settings(_env_file=None).owner_id_set == set()
