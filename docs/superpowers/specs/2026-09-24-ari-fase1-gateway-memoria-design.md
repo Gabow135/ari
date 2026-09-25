@@ -33,7 +33,7 @@ instead of rewriting the core.
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| LLM | Claude (Anthropic) | Strongest tool-calling / agent reasoning for later phases |
+| LLM | Claude via the **Claude Code CLI** (`claude -p`, headless subprocess) | User directive: use Claude Code, authenticated by the CLI's own login (e.g. a Claude Code subscription); **no `ANTHROPIC_API_KEY`**. The `anthropic` SDK dependency is removed. ToS caveat: a personal subscription for a multi-user production bot is a Phase 3 risk — revisit auth (API key / Bedrock / Vertex) then. |
 | Memory strategy | Custom layered memory | Full control, no framework lock-in |
 | Storage | SQLite + `sqlite-vec` | Zero-infra start; migrate to Postgres + pgvector when multi-user demands it |
 | Architecture | Hexagonal (Ports & Adapters) | Swap Telegram/Claude/SQLite without touching the core |

@@ -10,6 +10,18 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-24-ari-fase1-gateway-memoria-design.md`
 
+## REVISION 2026-09-24 — LLM backend: Claude Code CLI (not Anthropic API)
+
+User directive: Ari uses **Claude Code** (the `claude` CLI in headless mode) as its LLM backend, authenticated by the CLI's own login (e.g. a Claude Code subscription). **No `ANTHROPIC_API_KEY`.** This supersedes the following in this plan:
+
+- **Task 9** — REPLACED. Implement `ClaudeCodeCliAdapter` (subprocess to `claude -p`), not `AnthropicAdapter`. See `task-9-brief.md` (custom). File: `src/ari/infrastructure/llm/claude_code_adapter.py`.
+- **Task 6 / Settings** — `ANTHROPIC_API_KEY` is REMOVED (no longer required). Add `claude_bin: str = "claude"`. Applied as a revision commit.
+- **Task 12 / main.py** — wire `ClaudeCodeCliAdapter(model=settings.model, claude_bin=settings.claude_bin)` instead of `AnthropicAdapter`; drop the api_key argument.
+- **Dependencies (pyproject)** — REMOVE `anthropic`. No new Python dep (the `claude` CLI must be on PATH at runtime).
+- **Global Constraints** — no API key at all now; the `claude` CLI must be on PATH for runtime and the slow LLM test.
+
+ToS caveat (recorded): a personal Claude Code subscription driving a multi-user production bot (Sukasa, Phase 3) is a ToS/rate-limit risk; revisit the auth model at Phase 3.
+
 ## Global Constraints
 
 - Python 3.12+; all I/O is `async`. Test runner: `pytest` + `pytest-asyncio` (`asyncio_mode = auto`).
