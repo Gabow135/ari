@@ -83,6 +83,10 @@ python3 -m ari.main                    # macOS / Linux
 Then message your bot on Telegram. It replies with context and remembers facts
 and past exchanges across conversations.
 
+While Ari works you see *typing…* and a live progress message (🤔 thinking,
+📖/✏️/▶️ tool steps, the answer as it is written). It is deleted when the final
+reply arrives, so only the answer stays in the chat.
+
 ## Access control
 
 Only **owners** (`ARI_OWNER_IDS`) and users an owner approved can talk to Ari.

@@ -1,9 +1,9 @@
-import asyncio
 import json
 import logging
 
 from ari.domain.agent.message import Message
 from ari.infrastructure.claude_bin import resolve_claude_bin
+from ari.infrastructure.llm.stream_json import STREAM_ARGS, run_streaming
 
 log = logging.getLogger("ari.claude_code")
 
@@ -43,23 +43,15 @@ class ClaudeCodeCliAdapter:
     async def _default_runner(self, system: str, prompt: str, model: str) -> str:
         # --allowed-tools "" passes an empty whitelist so Claude has no tools
         # and cannot perform filesystem, Bash, or web actions.
-        proc = await asyncio.create_subprocess_exec(
-            self._bin, "-p",
-            "--model", model,
-            "--system-prompt", system,
-            "--output-format", "json",
-            "--allowed-tools", "",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        # stream-json: progress (thinking, partial text) is emitted as it arrives.
+        return await run_streaming(
+            [self._bin, "-p",
+             "--model", model,
+             "--system-prompt", system,
+             *STREAM_ARGS,
+             "--allowed-tools", ""],
+            stdin=prompt.encode(),
         )
-        out, err = await proc.communicate(prompt.encode())
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"claude CLI failed (exit {proc.returncode}): "
-                f"{err.decode(errors='replace')[:500]}"
-            )
-        return out.decode(errors="replace")
 
     @staticmethod
     def _render(messages: list[Message]) -> str:

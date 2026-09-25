@@ -4,6 +4,7 @@ import logging
 
 from ari.domain.coding.entities import CodingInstruction, CodingPlan, CodingResult
 from ari.infrastructure.claude_bin import resolve_claude_bin
+from ari.infrastructure.llm.stream_json import STREAM_ARGS, run_streaming
 
 log = logging.getLogger("ari.claude_code_coder")
 
@@ -97,7 +98,7 @@ class ClaudeCodeCoder:
             f"{text}\n\nProduce a concise step plan only; do NOT modify files.",
             "--model", model,
             "--permission-mode", "plan",
-            "--output-format", "json",
+            *STREAM_ARGS,
         ]
         return await self._run(argv, cwd=target_dir)
 
@@ -108,33 +109,13 @@ class ClaudeCodeCoder:
             "--model", model,
             "--allowed-tools", "Read", "Edit", "Write", "Bash",
             "--permission-mode", "acceptEdits",
-            "--output-format", "json",
+            *STREAM_ARGS,
         ]
         return await self._run(argv, cwd=target_dir)
 
     async def _run(self, argv: list[str], cwd: str) -> str:
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            cwd=cwd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            out, err = await asyncio.wait_for(
-                proc.communicate(), timeout=self._timeout
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.communicate()
-            raise RuntimeError(
-                f"claude timed out after {self._timeout}s"
-            )
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"claude failed (exit {proc.returncode}): "
-                f"{err.decode(errors='replace')[:400]}"
-            )
-        return out.decode(errors="replace")
+        # stream-json: each tool use is emitted as progress while Claude works.
+        return await run_streaming(argv, cwd=cwd, timeout=self._timeout)
 
     # ------------------------------------------------------------------
     # Git helpers

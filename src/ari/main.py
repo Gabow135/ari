@@ -22,6 +22,7 @@ from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
 from ari.infrastructure.coder.workspace import Workspace
 from ari.infrastructure.gateway.bot_commands import register_commands
+from ari.infrastructure.gateway.progress_message import ProgressMessage
 from ari.infrastructure.gateway.telegram_adapter import TelegramAdapter
 from ari.infrastructure.llm.claude_code_adapter import ClaudeCodeCliAdapter
 from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
@@ -168,15 +169,23 @@ def main() -> None:
             _background_tasks.add(task)
             task.add_done_callback(_background_tasks.discard)
 
+        async def _confirm_with_progress(uid, action) -> None:
+            # Background coding run gets its own progress message (the one of the
+            # "dale" turn is already gone by then).
+            async with ProgressMessage(app.bot, msg.chat_id):
+                await confirm(uid, action, report)
+
         # Per-message deps: never mutate the shared base instance.
         local_deps = dataclasses.replace(
             base_deps,
             chat=chat,
-            confirm_coding=lambda uid, action: confirm(uid, action, report),
+            confirm_coding=_confirm_with_progress,
             scheduler=_schedule,
         )
 
-        reply = await route_message(text, user_id, local_deps)
+        # "typing…" + a live progress message, deleted before the final reply.
+        async with ProgressMessage(app.bot, msg.chat_id):
+            reply = await route_message(text, user_id, local_deps)
         if reply is not None:
             for part in TelegramAdapter.split_text(reply):
                 await msg.reply_text(part)
