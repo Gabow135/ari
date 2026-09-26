@@ -42,7 +42,7 @@ the vault, or its own OAuth token.
 
 ### 3.1 Port (domain, pure)
 
-`domain/secrets/secret_vault.py`
+`domain/vault/secret_vault.py`
 
 ```python
 class SecretVault(ABC):
@@ -54,7 +54,7 @@ class SecretVault(ABC):
 
 ### 3.2 Adapter (infrastructure)
 
-`infrastructure/secrets/fernet_vault.py` — `FernetVault(SecretVault)`
+`infrastructure/vault/fernet_vault.py` — `FernetVault(SecretVault)`
 
 - State on disk: `vault.enc` = `Fernet(key).encrypt(json.dumps({name: value}).encode())`.
 - Key: `ARI_VAULT_KEY` (a 32-byte url-safe base64 Fernet key). Missing key → vault
@@ -163,9 +163,9 @@ nest the Ari checkout (e.g. `~/AriFiles`), not a parent of it.
 ## 8. Architecture (new/changed)
 
 ```
-domain/secrets/
+domain/vault/
   secret_vault.py        SecretVault ABC (pure)
-infrastructure/secrets/
+infrastructure/vault/
   fernet_vault.py        FernetVault(SecretVault): encrypted file, ARI_VAULT_KEY
 ari/vault_cli.py         python3 -m ari.vault  (init/set/list/delete, getpass)
 infrastructure/tools/

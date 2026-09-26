@@ -41,10 +41,10 @@
 
 **Files:**
 - Modify: `pyproject.toml:5-13` (add `cryptography`)
-- Create: `src/ari/domain/secrets/__init__.py` (empty)
-- Create: `src/ari/domain/secrets/secret_vault.py`
-- Create: `src/ari/infrastructure/secrets/__init__.py` (empty)
-- Create: `src/ari/infrastructure/secrets/fernet_vault.py`
+- Create: `src/ari/domain/vault/__init__.py` (empty)
+- Create: `src/ari/domain/vault/secret_vault.py`
+- Create: `src/ari/infrastructure/vault/__init__.py` (empty)
+- Create: `src/ari/infrastructure/vault/fernet_vault.py`
 - Test: `tests/infrastructure/test_fernet_vault.py`
 
 **Interfaces:**
@@ -82,7 +82,7 @@ import os
 import pytest
 from cryptography.fernet import Fernet
 
-from ari.infrastructure.secrets.fernet_vault import FernetVault
+from ari.infrastructure.vault.fernet_vault import FernetVault
 
 KEY = Fernet.generate_key().decode()
 
@@ -158,12 +158,12 @@ def test_no_leftover_temp_file(tmp_path):
 - [ ] **Step 3: Run test to verify it fails**
 
 Run: `python3 -m pytest tests/infrastructure/test_fernet_vault.py -q`
-Expected: FAIL — `ModuleNotFoundError: ari.infrastructure.secrets.fernet_vault`.
+Expected: FAIL — `ModuleNotFoundError: ari.infrastructure.vault.fernet_vault`.
 
 - [ ] **Step 4: Write the port**
 
-Create `src/ari/domain/secrets/__init__.py` (empty) and
-`src/ari/domain/secrets/secret_vault.py`:
+Create `src/ari/domain/vault/__init__.py` (empty) and
+`src/ari/domain/vault/secret_vault.py`:
 
 ```python
 from abc import ABC, abstractmethod
@@ -188,8 +188,8 @@ class SecretVault(ABC):
 
 - [ ] **Step 5: Write the adapter**
 
-Create `src/ari/infrastructure/secrets/__init__.py` (empty) and
-`src/ari/infrastructure/secrets/fernet_vault.py`:
+Create `src/ari/infrastructure/vault/__init__.py` (empty) and
+`src/ari/infrastructure/vault/fernet_vault.py`:
 
 ```python
 """Encrypted-at-rest secret store: a single Fernet-encrypted JSON blob on disk.
@@ -201,7 +201,7 @@ import os
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from ari.domain.secrets.secret_vault import SecretVault
+from ari.domain.vault.secret_vault import SecretVault
 
 log = logging.getLogger("ari.vault")
 
@@ -267,7 +267,7 @@ Expected: PASS (all 9).
 - [ ] **Step 7: Commit**
 
 ```bash
-git add pyproject.toml src/ari/domain/secrets src/ari/infrastructure/secrets tests/infrastructure/test_fernet_vault.py
+git add pyproject.toml src/ari/domain/vault src/ari/infrastructure/vault tests/infrastructure/test_fernet_vault.py
 git commit -m "feat: encrypted secret vault (SecretVault port + FernetVault)"
 ```
 
@@ -293,7 +293,7 @@ Create `tests/test_vault_cli.py`:
 from cryptography.fernet import Fernet
 
 import ari.vault as vault_cli
-from ari.infrastructure.secrets.fernet_vault import FernetVault
+from ari.infrastructure.vault.fernet_vault import FernetVault
 
 
 def test_init_prints_a_valid_fernet_key(capsys):
@@ -344,7 +344,7 @@ import getpass
 from cryptography.fernet import Fernet
 
 from ari.config.settings import Settings
-from ari.infrastructure.secrets.fernet_vault import FernetVault
+from ari.infrastructure.vault.fernet_vault import FernetVault
 
 
 def _vault() -> FernetVault:
@@ -864,7 +864,7 @@ In `mcp/servers.json`, add inside `mcpServers` (alongside `google` and `mysql`):
 In `main.py`, add the import (after line 45, near the other tools import):
 
 ```python
-from ari.infrastructure.secrets.fernet_vault import FernetVault
+from ari.infrastructure.vault.fernet_vault import FernetVault
 ```
 
 Replace the registry construction (lines 97-98) with:
