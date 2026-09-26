@@ -34,28 +34,32 @@ class VaultWebMaintainer:
         self._cert_dir, self._port, self._bind = cert_dir, port, bind
         self._store = VaultLinkStore(ttl_minutes * 60, clock)
         self._server: VaultWebServer | None = None
+        self._lan_ip: str | None = None
         self._lock = threading.Lock()
 
     def new_link(self) -> str:
         with self._lock:
-            lan_ip = detect_lan_ip()
             if self._server is None:
+                lan_ip = detect_lan_ip()
+                self._lan_ip = lan_ip
                 cert, key = ensure_cert(self._cert_dir, lan_ip)
                 names = configurable_secret_names(self._servers_json)
                 self._server = VaultWebServer(self._bind, self._port, cert, key,
                                               self._vault, self._store, names)
                 self._server.start()
             token = self._store.create()
-            return f"https://{lan_ip}:{self._server.port}/v/{token}"
+            return f"https://{self._lan_ip}:{self._server.port}/v/{token}"
 
     def sweep_and_maybe_stop(self) -> None:
         with self._lock:
             if self._server is not None and self._store.active_count() == 0:
                 self._server.stop()
                 self._server = None
+                self._lan_ip = None
 
     def stop(self) -> None:
         with self._lock:
             if self._server is not None:
                 self._server.stop()
                 self._server = None
+                self._lan_ip = None
