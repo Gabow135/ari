@@ -34,7 +34,7 @@ absent from logs.
 | What is a skill | **Code plugin**: a local dir with `skill.json` + `skill.py` | User choice; matches the coding-agent generation path (Phase 2) |
 | Origin | **Local only**, owner-authored / Ari-authored; **no** git/registry install | User choice; smallest trust surface for a personal bot |
 | Execution | **In-process**, first-party skills only in v1 (no sandbox yet) | Only trusted (owner/Ari-written) code runs; sandbox is justified in Phase 2 |
-| Management surface | **From Telegram**, natural language → owner-only agent tools | User choice ("yo pido a Ari por telegram") |
+| Management surface | **Owner-only Telegram slash commands** in the main process (`/skills`, `/skill_on`, `/skill_off`) | Agent tools run in a DB-only subprocess and can't mint the LAN link; slash commands run in the main process. Natural-language control deferred (§16) |
 | Credential intake | **Reuse `vault_web`** (`VaultWebMaintainer`, `/vault`): HTTPS self-signed, one-time token, TTL, idle reaper | Already built, tested, wired; more secure (HTTPS) than a new server. Only the writable allowlist is extended to include skill secrets |
 | Credential storage | `FernetVault.set()` (same vault as MCP secrets) | User requirement ("use la bodega para guardar las credenciales") |
 | Hook contracts | Typed ports: `InboundTransform`, `OutboundTransform` (v1) | Approach A; explicit, testable boundaries |
@@ -237,17 +237,27 @@ management tool calls `maintainer.new_link()` and returns the existing HTTPS
 - `skill.py` implements `on_inbound` (STT) and `on_outbound` (TTS), reading models/voice
   from `config`. It receives/returns **bytes** only — no Telegram, no disk.
 
-## 10. Management from Telegram (owner-only agent tools)
+## 10. Management from Telegram (owner-only slash commands)
 
-Skill management is exposed as **owner-only agent tools** (like the existing schedule/admin
-tools in `ari_tools.py`), so natural-language requests work:
+Ari's agent tools run in a **separate per-turn MCP subprocess** that only reaches the DB
+(`mcp_server/__main__.py`), so they cannot call the main process's `SkillManager` or
+`VaultWebMaintainer` — and the LAN link must be minted in the main process (it starts the
+HTTPS server and holds the token in memory). Therefore v1 manages skills with **owner-only
+Telegram slash commands registered in the main process**, exactly like `/vault`:
 
-- `skill_list()` → status of all skills.
-- `skill_enable(name)` / `skill_disable(name)` → flip `enabled`, reload. If enabling a
-  skill in `needs_secrets`, call `VaultWebMaintainer.new_link()` and return the HTTPS link.
-- `skill_request_secret(name)` → (re)issue the `vault_web` link for missing secrets.
+- `/skills` → list each skill: name, version, enabled, state (`active` | `needs_secrets` |
+  `failed`), missing secrets.
+- `/skill_on <name>` → set `enabled=true` and reload. If the skill is `needs_secrets`, reply
+  with `VaultWebMaintainer.new_link()` (the HTTPS `vault_web` link).
+- `/skill_off <name>` → set `enabled=false` and reload.
 
-All are gated by `Authorizer.is_owner`; non-owners cannot see or manage skills.
+Each handler is owner-gated with `app.bot_data["gate"].is_owner(...)` (the `/vault` pattern);
+non-owners get the "solo para el dueño" refusal. Each command is also a `Capability(...,
+owner_only=True)` in `capabilities.py`, which feeds the Telegram menu and Ari's prompt.
+
+Natural-language management ("activá el skill de audio") is **out of scope for v1** because
+it needs a cross-process bridge (a subprocess tool queuing an intent the main process acts
+on); see §16.
 
 ## 11. Configuration (additions)
 
@@ -277,10 +287,11 @@ skills/groq_audio/
   groq_client.py         Groq STT/TTS HTTP client
 infrastructure/vault_web/maintainer.py  EXTEND: optional extra_names provider unioned into
                          the writable allowlist in new_link()
-application/ari_tools.py + skill_list / skill_enable / skill_disable / skill_request_secret (owner-only)
+domain/agent/capabilities.py  + Capability entries: skills, skill_on, skill_off (owner_only)
 infrastructure/gateway/telegram_adapter.py  voice branch → RawInbound; Delivery → send_voice
 config/settings.py       + skills_dir
-main.py (build)          construct SkillManager; inject into gateway & sender; pass
+main.py                  construct SkillManager; bot_data["skills"]; voice I/O in _dispatch;
+                         /skills /skill_on /skill_off owner-only CommandHandlers; pass
                          skill_manager.required_secret_names as VaultWebMaintainer extra_names
 ```
 
@@ -351,13 +362,15 @@ Slow (`marker slow`, skipped without creds):
   validation, and a review-before-activate gate.
 - Installing skills from git or a registry.
 - Non-owner skill management or per-skill per-user grants.
+- **Natural-language skill management** (a subprocess agent tool queuing an intent the main
+  process fulfils) — v1 uses slash commands instead (§10).
 - OGG/Opus transcoding of TTS output (ffmpeg) and streaming audio.
 - `McpProvider` / `CommandHandler` hook types (the contract leaves room; not built now).
 
 ## 17. Acceptance criteria
 
-1. Owner asks Ari (Telegram) to enable `groq_audio`; the key is missing → Ari replies with
-   the `vault_web` `https://<lan-ip>:<port>/v/<token>` link.
+1. Owner runs `/skill_on groq_audio`; the key is missing → Ari replies with the `vault_web`
+   `https://<lan-ip>:<port>/v/<token>` link.
 2. Opening the link on the LAN shows the form with `GROQ_API_KEY` listed as "falta"
    (because the allowlist was extended with the skill's `required_secrets`); submitting it
    stores it in `vault.enc` (encrypted) and the skill activates on the next reload. The key
@@ -365,8 +378,8 @@ Slow (`marker slow`, skipped without creds):
 3. A Telegram voice note is transcribed via Groq and answered by Ari as if typed.
 4. When the turn came from voice, Ari's reply is delivered as **text + voice**; if TTS
    fails, text still arrives.
-5. Disabling the skill (Telegram) stops both hooks without a restart; re-enabling restores
-   them (hot-reload).
+5. `/skill_off groq_audio` stops both hooks without a restart; `/skill_on` restores them
+   (hot-reload).
 6. A skill that raises on load is isolated (`failed`) and the bot keeps running.
 7. Credential intake is the existing `vault_web`: the link is HTTPS-only (a plain-HTTP
    client cannot connect), an expired token returns `403`, and the server is idle-reaped —
