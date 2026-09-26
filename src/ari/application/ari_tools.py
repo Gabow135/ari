@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from ari.application.access.gate import normalize_code
 from ari.application.schedule.agenda_format import created_receipt, item_line
+from ari.application.text_format import truncate
 from ari.domain.access.entities import APPROVED, PENDING
 from ari.domain.schedule.actions import ActionError, next_cron_run, parse_action
 from ari.domain.schedule.entities import ACTIVE, CANCELLED, PAUSED, REMINDER, RUNNING, TASK
@@ -222,5 +223,4 @@ class AriTools:
         if self._coding is None:
             return "No pude prepararlo: la cola de código no está disponible."
         await self._coding.add(self._a.user_id, self._a.chat_id, text, target)
-        short = text if len(text) <= 120 else text[:119] + "…"
-        return await self._receipt(f"🛠️ Preparando plan: {short}")
+        return await self._receipt(f"🛠️ Preparando plan: {truncate(text)}")

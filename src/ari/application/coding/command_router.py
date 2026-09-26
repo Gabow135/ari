@@ -1,3 +1,5 @@
+import unicodedata
+
 _AFFIRMATIVE = {"dale", "si", "sí", "ok", "okay", "yes", "dale total"}
 _NEGATIVE = {"no", "cancelar", "cancel", "nope"}
 
@@ -38,3 +40,13 @@ def is_affirmative(text: str) -> bool:
 
 def is_negative(text: str) -> bool:
     return text.strip().casefold() in _NEGATIVE
+
+
+def is_dale(text: str) -> bool:
+    """Exact confirmation for a proposed (proponer_codigo) plan: only "dale",
+    case-insensitive/trimmed and stripped of trailing punctuation or emoji —
+    not "dale total" nor any other affirmative."""
+    core = text.strip()
+    while core and unicodedata.category(core[-1])[0] in ("P", "S"):
+        core = core[:-1]
+    return core.strip().casefold() == "dale"

@@ -32,3 +32,6 @@ class CodingResult:
 class PendingAction:
     instruction: CodingInstruction
     plan: CodingPlan
+    # True when this plan came from proponer_codigo (a background proposal) rather
+    # than an owner-typed /code — only an exact "dale" confirms it (see command_router).
+    proposed: bool = False

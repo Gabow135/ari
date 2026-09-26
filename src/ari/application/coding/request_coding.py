@@ -13,7 +13,8 @@ class RequestCoding:
         self._store = pending_store
         self._default_dir = default_dir
 
-    async def __call__(self, user_id: str, instruction_text: str, target: str | None) -> str:
+    async def __call__(self, user_id: str, instruction_text: str, target: str | None,
+                       proposed: bool = False) -> str:
         try:
             target_dir = self._ws.resolve(target, self._default_dir)
         except ValueError as exc:
@@ -21,6 +22,6 @@ class RequestCoding:
             return "No puedo trabajar ahí: el destino queda fuera de la carpeta permitida."
         instruction = CodingInstruction(user_id, instruction_text, target)
         plan = await self._coder.plan(instruction, target_dir)
-        self._store.put(user_id, PendingAction(instruction, plan))
+        self._store.put(user_id, PendingAction(instruction, plan, proposed=proposed))
         return (f"Plan para `{target_dir}`:\n{plan.summary}\n\n"
                 "Responde *dale* para ejecutar, o *no* para cancelar.")
