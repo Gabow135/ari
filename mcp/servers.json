@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "google": {
+      "command": "uvx",
+      "args": ["workspace-mcp", "--tools", "gmail", "calendar", "drive"],
+      "env": {
+        "GOOGLE_OAUTH_CLIENT_ID": "${GOOGLE_OAUTH_CLIENT_ID}",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "${GOOGLE_OAUTH_CLIENT_SECRET}"
+      },
+      "access": "owner",
+      "description": "Gmail, Calendar y Drive del creador"
+    },
+    "mysql": {
+      "command": "npx",
+      "args": ["-y", "@benborla29/mcp-server-mysql"],
+      "env": {
+        "MYSQL_HOST": "${ARI_MYSQL_HOST}",
+        "MYSQL_USER": "${ARI_MYSQL_USER}",
+        "MYSQL_PASS": "${ARI_MYSQL_PASS}",
+        "MYSQL_DB": "${ARI_MYSQL_DB}"
+      },
+      "access": "owner",
+      "description": "Base de datos (solo lectura)"
+    }
+  }
+}

@@ -20,7 +20,7 @@ async def test_default_menu_only_has_start_and_owners_get_full_menu():
     assert public == ["start", "recordatorios"] and isinstance(default_scope, BotCommandScopeDefault)
     assert isinstance(owner_scope, BotCommandScopeChat) and owner_scope.chat_id == 42
     assert {"start", "recordatorios", "code", "aprobar", "revocar", "accesos",
-            "restart", "stop"} == set(owner)
+            "conexiones", "restart", "stop"} == set(owner)
 
 
 async def test_failure_for_one_owner_does_not_stop_the_rest():

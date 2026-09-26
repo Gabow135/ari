@@ -29,7 +29,7 @@ def test_menu_is_derived_from_registry():
     assert [c for c, _ in menu_commands(owner=False)] == ["start", "recordatorios"]
     owner = [c for c, _ in menu_commands(owner=True)]
     assert set(owner) == {"start", "recordatorios", "code", "aprobar", "revocar",
-                          "accesos", "restart", "stop"}
+                          "accesos", "conexiones", "restart", "stop"}
     assert owner[0] == "start"
 
 

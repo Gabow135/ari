@@ -24,6 +24,7 @@ from ari.application.schedule.run_due_items import RunDueItems
 from ari.application.schedule.schedule_actions import ScheduleActions
 from ari.application.schedule.scheduler import Scheduler
 from ari.application.schedule.system_notices import SystemNotices
+from ari.application.tools.tool_policy import ToolPolicy
 from ari.config.settings import Settings
 from ari.domain.agent.agent_service import AgentService
 from ari.domain.ports.gateway_port import IncomingMessage
@@ -41,6 +42,7 @@ from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import connect
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 from ari.infrastructure.soul.soul_loader import SoulLoader
+from ari.infrastructure.tools.mcp_registry import McpRegistry
 from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
@@ -75,6 +77,7 @@ class Components:
     actions: ScheduleActions
     agent: AgentService
     soul: SoulLoader
+    tools: ToolPolicy
 
 
 def cli_env(settings: Settings) -> dict | None:
@@ -91,8 +94,12 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     dim = len((await embeddings.embed(["probe"]))[0])
     conn = await connect(settings.db_path, embedding_dim=dim)
     memory = SqliteMemoryAdapter(conn, embedding_dim=dim)
+    registry = McpRegistry(settings.mcp_config, ".env",
+                           os.path.join(settings.claude_config_dir, "mcp"))
+    tools = ToolPolicy(registry, Authorizer(settings.owner_id_set).is_owner)
     llm = MonitoredLLM(ClaudeCodeCliAdapter(model=settings.model,
-                                            claude_bin=settings.claude_bin, cli_env=env))
+                                            claude_bin=settings.claude_bin, cli_env=env,
+                                            timeout=settings.chat_timeout_seconds))
     schedule_store = SqliteScheduleStore(conn)
     actions = ScheduleActions(schedule_store, tz, settings.max_items_per_user, clock=_utcnow)
     agent, soul = AgentService(), SoulLoader(settings.soul_dir)
@@ -104,8 +111,9 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         soul=soul,
         is_owner=Authorizer(settings.owner_id_set).is_owner,
         actions=actions,
+        tools=tools,
     )
-    return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul)
+    return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul, tools)
 
 
 def main() -> None:
@@ -122,6 +130,9 @@ def main() -> None:
         app.bot_data["handler"] = c.handler
         app.bot_data["conn"] = c.conn
         app.bot_data["actions"] = c.actions
+        app.bot_data["tools"] = c.tools
+        for line in c.tools.status_text().splitlines():
+            logging.info("conexión: %s", line)
         access_store = SqliteAccessStore(c.conn)
         app.bot_data["gate"] = AccessGate(access_store, settings.owner_id_set,
                                           on_revoke=c.schedule_store.cancel_user)
@@ -184,7 +195,7 @@ def main() -> None:
             llm=c.llm, memory=c.memory, store=c.schedule_store, agent=c.agent,
             soul=c.soul, checklist=SoulLoader(settings.soul_dir, "HEARTBEAT.md"),
             owners=settings.owner_id_set, send=send, tz=tz, quiet=quiet,
-            interval_minutes=settings.heartbeat_minutes, clock=_utcnow)
+            interval_minutes=settings.heartbeat_minutes, clock=_utcnow, tools=c.tools)
         await c.schedule_store.reset_running()  # items interrupted by a crash/restart
         scheduler = Scheduler([due, notices.tick, heartbeat])
         scheduler.start()
@@ -324,6 +335,18 @@ def main() -> None:
             await _reply_parts(msg, await app.bot_data["actions"].list_text(
                 str(msg.from_user.id)))
 
+    async def _on_connections(update, _context) -> None:
+        """/conexiones (owner only): configured MCP servers and web."""
+        msg = update.effective_message
+        if msg is None or msg.from_user is None:
+            return
+        if not await _admit(msg):
+            return
+        if not app.bot_data["gate"].is_owner(str(msg.from_user.id)):
+            await msg.reply_text("Ese comando es solo para el dueño.")
+            return
+        await _reply_parts(msg, app.bot_data["tools"].status_text())
+
     async def _on_access_admin(update, _context) -> None:
         """Owner-only /aprobar, /revocar, /accesos."""
         msg = update.effective_message
@@ -343,6 +366,7 @@ def main() -> None:
     # Slash commands reach _on_command; plain text reaches _on_message.
     app.add_handler(CommandHandler("start", _on_start))
     app.add_handler(CommandHandler("recordatorios", _on_reminders))
+    app.add_handler(CommandHandler("conexiones", _on_connections))
     app.add_handler(CommandHandler(list(ADMIN_COMMANDS), _on_access_admin))
     app.add_handler(CommandHandler(list(LIFECYCLE_COMMANDS), _on_lifecycle))
     app.add_handler(CommandHandler(["code", "fase2"], _on_command))

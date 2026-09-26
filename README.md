@@ -119,6 +119,27 @@ claude.ai connectors, hooks, plugins and skills never leak into its replies.
   are queued until morning. Your own reminders still arrive on time.
 - Everything is stored in SQLite and survives `/restart` and outages.
 
+## Tools and connections (MCP)
+
+Everyone approved can get answers researched on the **web**. The owner also gets
+the **MCP servers** declared in [`mcp/servers.json`](mcp/servers.json) (Google
+Workspace and a read-only MySQL database out of the box). Secrets go in `.env` and
+are referenced as `${VAR}`; a server with a missing variable or launcher is
+disabled. `access: "users"` opens a server to approved users. Check the state with
+`/conexiones`. The file and `.env` are re-read automatically.
+
+Setup, once:
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) (provides `uvx`).
+2. Google: in Google Cloud create an OAuth client of type *Desktop*, enable the
+   Gmail, Calendar and Drive APIs, and set `GOOGLE_OAUTH_CLIENT_ID` /
+   `GOOGLE_OAUTH_CLIENT_SECRET` in `.env`. Run `uvx workspace-mcp` once in a
+   terminal to authorize your account (tokens are stored locally).
+3. MySQL: create a user with `SELECT` only and set `ARI_MYSQL_HOST`,
+   `ARI_MYSQL_USER`, `ARI_MYSQL_PASS`, `ARI_MYSQL_DB` in `.env`.
+
+Content read through tools is treated as data, never as instructions (see
+`soul/SOUL.md`). Google write tools are enabled for the owner.
+
 ## Access control
 
 Only **owners** (`ARI_OWNER_IDS`) and users an owner approved can talk to Ari.
@@ -173,6 +194,8 @@ python3 -m pytest -m slow           # also runs tests that download a model / hi
 | `ARI_QUIET_HOURS` | no | `22-7` | Quiet window (local hours); empty = none |
 | `ARI_HEARTBEAT_MINUTES` | no | `60` | Heartbeat interval; `0` disables it |
 | `ARI_MAX_ITEMS_PER_USER` | no | `20` | Active reminders/tasks per user |
+| `ARI_MCP_CONFIG` | no | `./mcp/servers.json` | MCP server declarations |
+| `ARI_CHAT_TIMEOUT_SECONDS` | no | `180` | Max seconds per Claude call with tools |
 
 No `ANTHROPIC_API_KEY` is used — authentication is handled by the Claude Code CLI.
 

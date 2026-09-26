@@ -211,3 +211,19 @@ async def test_background_send_never_raises():
             raise RuntimeError("Forbidden")
 
     await main_mod._send_quietly(Broken(), "42", "hola")  # must not raise
+
+
+class _FakeTools:
+    def status_text(self):
+        return "🌐 web — buscar y leer páginas (todos)"
+
+
+async def test_conexiones_is_owner_only(wired):
+    app, _ = wired
+    app.bot_data["tools"] = _FakeTools()
+    cb = _callback(app, telegram.ext.CommandHandler, "conexiones")
+    owner_replies, user_replies = [], []
+    await cb(_update(42, "/conexiones", owner_replies), None)
+    assert owner_replies == ["🌐 web — buscar y leer páginas (todos)"]
+    await cb(_update(7, "/conexiones", user_replies), None)
+    assert "código" in user_replies[0].lower() or "solo para el dueño" in user_replies[0]

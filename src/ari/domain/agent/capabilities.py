@@ -43,6 +43,10 @@ CAPABILITIES: list[Capability] = [
         summary="Avisos del sistema a tu creador: solicitudes de acceso sin aprobar hace "
                 "más de 12 h, fallas repetidas de Claude y tareas pausadas."),
     Capability(
+        command="conexiones", menu="Ver conexiones (MCP y web)", owner_only=True,
+        summary="Ver el estado de tus conexiones MCP y de la web: cuáles están "
+                "configuradas y qué falta en las que no."),
+    Capability(
         command="code", menu="Tarea de código: /code [dir:ruta] instrucción", owner_only=True,
         summary="Programar en los proyectos de la carpeta permitida usando Claude Code "
                 "con herramientas (leer, editar, ejecutar comandos).",
