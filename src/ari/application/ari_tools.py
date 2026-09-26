@@ -44,10 +44,11 @@ class Actor:
 
 class AriTools:
     def __init__(self, actor: Actor, *, schedule, memory, turn_log, tz, max_items: int,
-                 clock, gate=None, access=None):
+                 clock, gate=None, access=None, coding=None):
         self._a, self._schedule, self._memory, self._log = actor, schedule, memory, turn_log
         self._tz, self._max, self._clock = tz, max_items, clock
         self._gate, self._access = gate, access
+        self._coding = coding  # SqliteCodingRequests | None
 
     def _allowed(self, tool: str) -> bool:
         if tool in allowed_ari_tools(self._a.is_owner, self._a.context):
@@ -206,3 +207,20 @@ class AriTools:
         signature = (self._a.name or "").strip() or "tu contacto"
         await self._log.outbox_add(rec.user_id, f"📨 De {signature} (vía Ari): {texto}")
         return await self._receipt(f"📨 Enviado a {_who(rec)}")
+
+    # ---- proactive code ----------------------------------------------------
+
+    async def proponer_codigo(self, instruccion: str, carpeta: str | None = None) -> str:
+        if not self._allowed("proponer_codigo"):
+            return DENIED
+        text = (instruccion or "").strip()
+        if not text or len(text) > 2000:
+            return "No pude prepararlo: la instrucción debe tener entre 1 y 2000 caracteres."
+        target = (carpeta or "").strip() or None
+        if target is not None and len(target) > 500:
+            return "No pude prepararlo: la carpeta es demasiado larga."
+        if self._coding is None:
+            return "No pude prepararlo: la cola de código no está disponible."
+        await self._coding.add(self._a.user_id, self._a.chat_id, text, target)
+        short = text if len(text) <= 120 else text[:119] + "…"
+        return await self._receipt(f"🛠️ Preparando plan: {short}")

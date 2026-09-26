@@ -4,7 +4,7 @@ CHAT, TASK, HEARTBEAT = "chat", "task", "heartbeat"
 ARI_SERVER = "ari"
 ARI_TOOLS = ("agendar", "listar_agenda", "cancelar", "recordar_dato", "olvidar_dato",
              "ver_datos", "aprobar_acceso", "revocar_acceso", "ver_accesos",
-             "enviar_mensaje")
+             "enviar_mensaje", "proponer_codigo")
 
 _READ = {"listar_agenda", "ver_datos"}
 _USER_CHAT = _READ | {"agendar", "cancelar", "recordar_dato", "olvidar_dato"}

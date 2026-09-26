@@ -83,4 +83,13 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         """(Solo el creador) Envía un mensaje firmado a un usuario aprobado, por @usuario o id."""
         return await (await get_tools()).enviar_mensaje(destinatario, texto)
 
+    @tool("proponer_codigo")
+    async def proponer_codigo(instruccion: str, carpeta: str | None = None) -> str:
+        """(Solo el creador) Prepara un plan para implementar o cambiar código con /code.
+        Úsala solo cuando tu creador pida implementar o cambiar algo, o acepte tu
+        sugerencia de hacerlo. Solo prepara el plan: nada se modifica hasta que tu
+        creador responda «dale». carpeta: opcional, relativa a la carpeta permitida
+        (por defecto, el repositorio de Ari)."""
+        return await (await get_tools()).proponer_codigo(instruccion, carpeta)
+
     return server

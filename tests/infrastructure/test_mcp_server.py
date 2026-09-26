@@ -45,6 +45,16 @@ async def test_server_registers_exactly_the_catalogue_and_calls_tools():
         await conn.close()
 
 
+async def test_proponer_codigo_registered_only_for_owner_chat():
+    async def get_tools():
+        raise AssertionError("not called")
+
+    from ari.domain.tools.ari_permissions import allowed_ari_tools
+    owner = {t.name for t in await build_server(get_tools, allowed_ari_tools(True, "chat")).list_tools()}
+    user = {t.name for t in await build_server(get_tools, allowed_ari_tools(False, "chat")).list_tools()}
+    assert "proponer_codigo" in owner and "proponer_codigo" not in user
+
+
 async def test_build_server_with_allowed_list_exposes_only_those_tools():
     conn = await connect(":memory:", embedding_dim=4)
     tools = AriTools(actor_from_env(ENV), schedule=SqliteScheduleStore(conn),
