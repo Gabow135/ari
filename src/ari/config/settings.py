@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     max_items_per_user: int = 20
     # Tools / MCP (3A)
     mcp_config: str = "./mcp/servers.json"
+    skills_dir: str = "./skills"
     chat_timeout_seconds: int = 180
     # Secrets vault (filesystem MCP root ARI_FS_ROOT is read raw by the registry)
     vault_key: str = ""
