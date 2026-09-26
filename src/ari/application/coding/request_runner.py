@@ -45,10 +45,22 @@ class CodingRequestRunner:
                 reply = await self._request_coding(req.user_id, req.instruction, req.target)
         except Exception as exc:  # noqa: BLE001 — report and keep the runner alive
             log.exception("planning coding request %s failed", req.id)
-            await self._requests.finish(req.id, FAILED, str(exc)[:300])
-            await self._send(req.chat_id, FAILED_MSG.format(str(exc)[:200]))
+            try:
+                await self._requests.finish(req.id, FAILED, str(exc)[:300])
+            except Exception:  # noqa: BLE001
+                log.exception("could not mark coding request %s failed", req.id)
+            try:
+                await self._send(req.chat_id, FAILED_MSG.format(str(exc)[:200]))
+            except Exception:  # noqa: BLE001
+                log.exception("could not send error message for coding request %s", req.id)
             return
         finally:
             self._planning.discard(req.user_id)
-        await self._requests.finish(req.id, DONE)
-        await self._send(req.chat_id, reply)
+        try:
+            await self._requests.finish(req.id, DONE)
+        except Exception:  # noqa: BLE001
+            log.exception("could not mark coding request %s done", req.id)
+        try:
+            await self._send(req.chat_id, reply)
+        except Exception:  # noqa: BLE001
+            log.exception("could not send plan for coding request %s", req.id)

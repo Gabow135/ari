@@ -129,3 +129,91 @@ async def test_planning_failure_is_reported_and_others_still_run(requests):
     assert await requests.status_of(good) == DONE
     assert ("42", "No pude preparar el plan: claude caído") in sent
     assert ("43", "plan otro") in sent
+
+
+async def test_finish_raises_still_sends_reply_and_does_not_raise(requests):
+    """If finish() raises on success path, owner still gets plan and task doesn't raise."""
+    async def request_coding(user_id, text, target):
+        return "plan para hacer"
+
+    class FailingRequests:
+        async def claim_pending(self):
+            return await requests.claim_pending()
+
+        async def finish(self, req_id, status, reason=None):
+            raise RuntimeError("sqlite locked")
+
+    rid = await requests.add("42", "42", "agrega foo", None)
+    failing_requests = FailingRequests()
+    runner, sent, tasks = _runner(failing_requests, request_coding)
+    await runner()
+    # Task should not raise even though finish failed
+    await asyncio.gather(*tasks)
+    # But owner should still get the plan reply
+    assert ("42", "plan para hacer") in sent
+
+
+async def test_send_raises_on_success_does_not_raise(requests):
+    """If send() raises on success path, awaiting task doesn't raise."""
+    async def request_coding(user_id, text, target):
+        return "plan para hacer"
+
+    async def failing_send(chat_id, text):
+        raise RuntimeError("http error")
+
+    def spawn_with_failing_send(coro):
+        tasks.append(asyncio.ensure_future(coro))
+
+    rid = await requests.add("42", "42", "agrega foo", None)
+    runner = CodingRequestRunner(requests, request_coding, PendingStore(), failing_send,
+                                 spawn_with_failing_send, Clock(datetime.now(timezone.utc)))
+    tasks = []
+    await runner()
+    # Task should not raise even though send failed
+    await asyncio.gather(*tasks)
+    # Request should still be marked DONE in DB
+    assert await requests.status_of(rid) == DONE
+
+
+async def test_finish_raises_on_failure_path_still_sends_error(requests):
+    """If finish(FAILED) raises, owner still gets error message and task doesn't raise."""
+    async def request_coding(user_id, text, target):
+        raise RuntimeError("planning failed")
+
+    class FailingRequests:
+        async def claim_pending(self):
+            return await requests.claim_pending()
+
+        async def finish(self, req_id, status, reason=None):
+            raise RuntimeError("sqlite locked")
+
+    rid = await requests.add("42", "42", "agrega foo", None)
+    failing_requests = FailingRequests()
+    runner, sent, tasks = _runner(failing_requests, request_coding)
+    await runner()
+    # Task should not raise
+    await asyncio.gather(*tasks)
+    # But owner should still get error message
+    assert ("42", "No pude preparar el plan: planning failed") in sent
+
+
+async def test_send_raises_on_failure_path_does_not_raise(requests):
+    """If send() raises on failure path, awaiting task doesn't raise."""
+    async def request_coding(user_id, text, target):
+        raise RuntimeError("planning error")
+
+    async def failing_send(chat_id, text):
+        raise RuntimeError("http error")
+
+    def spawn_with_failing_send(coro):
+        tasks.append(asyncio.ensure_future(coro))
+
+    rid = await requests.add("42", "42", "agrega foo", None)
+    runner = CodingRequestRunner(requests, request_coding, PendingStore(), failing_send,
+                                 spawn_with_failing_send, Clock(datetime.now(timezone.utc)))
+    tasks = []
+    await runner()
+    # Task should not raise even though send failed
+    await asyncio.gather(*tasks)
+    # Request should still be marked FAILED in DB
+    assert await requests.status_of(rid) == FAILED
