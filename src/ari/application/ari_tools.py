@@ -26,6 +26,8 @@ def _match(records, arg: str):
     target = (arg or "").strip()
     if target.startswith("@"):
         name = target[1:].lower()
+        if not name:  # bare "@" must not match users without a username
+            return []
         return [r for r in records if (r.username or "").lower() == name]
     return [r for r in records if r.user_id == target]
 
@@ -152,17 +154,22 @@ class AriTools:
             return DENIED
         arg = (codigo_o_usuario or "").strip()
         if arg.startswith("@"):
-            rec, error = await self._resolve(arg, {PENDING})
-            if error:
+            records = [r for r in await self._access.list_all() if r.status == PENDING]
+            found = _match(records, arg)
+            if not found:
                 return f"No encontré una solicitud pendiente de {arg}."
-            code = rec.code
+            if len(found) > 1:
+                return f"Hay varias solicitudes de {arg}; usa el código."
+            code = found[0].code
         else:
             code = normalize_code(arg)
         result = await self._gate.admin_command(f"/aprobar {code}", self._a.user_id)
         await self._deliver(result)
         if result.notifications:  # only a real approval notifies the user
-            rec = await self._access.find_by_code(code)
-            await self._receipt(f"✅ Aprobé a {_who(rec)}")
+            user_id = result.notifications[0][0]
+            approved = await self._access.get(user_id)
+            who = _who(approved) if approved else f"id {user_id}"
+            await self._receipt(f"✅ Aprobé a {who}")
         return result.reply
 
     async def revocar_acceso(self, usuario: str) -> str:
@@ -171,8 +178,11 @@ class AriTools:
         rec, error = await self._resolve(usuario, {PENDING, APPROVED})
         if error:
             return error
+        if self._gate.is_owner(rec.user_id):
+            return "No puedo hacer eso con la cuenta de un creador."
         result = await self._gate.admin_command(f"/revocar {rec.user_id}", self._a.user_id)
-        await self._receipt(f"⛔ Revoqué a {_who(rec)}")
+        if await self._access.get(rec.user_id) is None:  # the gate really revoked it
+            await self._receipt(f"⛔ Revoqué a {_who(rec)}")
         return result.reply
 
     async def ver_accesos(self) -> str:
@@ -183,12 +193,16 @@ class AriTools:
     async def enviar_mensaje(self, destinatario: str, texto: str) -> str:
         if not self._allowed("enviar_mensaje"):
             return DENIED
+        if self._gate is None or not self._gate.is_owner(self._a.user_id):
+            return DENIED
         texto = (texto or "").strip()
         if not texto or len(texto) > 1000:
             return "No pude enviarlo: el texto debe tener entre 1 y 1000 caracteres."
         rec, error = await self._resolve(destinatario, {APPROVED})
         if error:
             return error
-        await self._log.outbox_add(rec.user_id,
-                                   f"📨 De {self._a.name or 'tu contacto'} (vía Ari): {texto}")
+        if self._gate.is_owner(rec.user_id):
+            return "No puedo hacer eso con la cuenta de un creador."
+        signature = (self._a.name or "").strip() or "tu contacto"
+        await self._log.outbox_add(rec.user_id, f"📨 De {signature} (vía Ari): {texto}")
         return await self._receipt(f"📨 Enviado a {_who(rec)}")
