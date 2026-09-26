@@ -3,7 +3,7 @@
 - **Date:** 2026-09-26
 - **Status:** Draft — pending user approval
 - **Part of:** Extensibility (this: **skill manager + first-party Groq audio skill + LAN credential intake**) → Phase 2 (dynamic skill creation via the coding agent).
-- **Builds on:** Secrets vault (`SecretVault`, `FernetVault`, resolution order vault → env → `.env`), `McpRegistry` hot-reload-by-mtime pattern, `Authorizer.is_owner`, Telegram gateway (`TelegramAdapter`, `_on_message`, `_dispatch`), `HandleMessage`, agent tools (`ari_tools.py`).
+- **Builds on:** Secrets vault (`SecretVault`, `FernetVault`, resolution order vault → env → `.env`), the **`vault_web` maintainer** (`VaultWebMaintainer`, `/vault`, HTTPS LAN credential form — reused for credential intake), `McpRegistry` hot-reload-by-mtime pattern, `Authorizer.is_owner`, Telegram gateway (`TelegramAdapter`, `_on_message`, `_dispatch`), `HandleMessage`, agent tools (`ari_tools.py`).
 
 ## 1. Purpose
 
@@ -17,14 +17,15 @@ message.
 
 The owner drives everything **from Telegram** in natural language ("activá el skill de
 audio"). When a skill needs a credential, Ari does **not** ask for it in the chat. It
-starts a short-lived **LAN-only web form**, sends the owner a link with the machine's LAN
-IP, the owner enters the API key in that form, the value is stored encrypted in the vault,
-and the skill activates.
+**reuses the existing `vault_web` maintainer** to hand the owner a short-lived HTTPS LAN
+link; the owner enters the API key in that form, the value is stored encrypted in the
+vault, and the skill activates on the next reload.
 
 Success: the owner asks Ari (by Telegram) to enable the Groq audio skill; Ari replies with
-a `http://<lan-ip>:<port>/s/<token>` link; the owner opens it on the same network, pastes
-`GROQ_API_KEY`; from then on voice notes are transcribed and Ari can reply with voice —
-with the key encrypted in `vault.enc`, absent from the chat history, and absent from logs.
+the existing `vault_web` `https://<lan-ip>:<port>/v/<token>` link; the owner opens it on the
+same network, pastes `GROQ_API_KEY`; from then on voice notes are transcribed and Ari can
+reply with voice — with the key encrypted in `vault.enc`, absent from the chat history, and
+absent from logs.
 
 ## 2. Locked decisions
 
@@ -34,7 +35,7 @@ with the key encrypted in `vault.enc`, absent from the chat history, and absent 
 | Origin | **Local only**, owner-authored / Ari-authored; **no** git/registry install | User choice; smallest trust surface for a personal bot |
 | Execution | **In-process**, first-party skills only in v1 (no sandbox yet) | Only trusted (owner/Ari-written) code runs; sandbox is justified in Phase 2 |
 | Management surface | **From Telegram**, natural language → owner-only agent tools | User choice ("yo pido a Ari por telegram") |
-| Credential intake | **LAN-only web form**, one-time token, short TTL, ephemeral server | Keeps secrets out of the Telegram chat/logs; the correct channel for a secret |
+| Credential intake | **Reuse `vault_web`** (`VaultWebMaintainer`, `/vault`): HTTPS self-signed, one-time token, TTL, idle reaper | Already built, tested, wired; more secure (HTTPS) than a new server. Only the writable allowlist is extended to include skill secrets |
 | Credential storage | `FernetVault.set()` (same vault as MCP secrets) | User requirement ("use la bodega para guardar las credenciales") |
 | Hook contracts | Typed ports: `InboundTransform`, `OutboundTransform` (v1) | Approach A; explicit, testable boundaries |
 | Secret access | `ctx.secret(name)` scoped to the manifest's `required_secrets` | Least-privilege via the manifest |
@@ -189,37 +190,39 @@ instance. Kept separate so `SkillManager` is tested with a fake loader (no real 
    fallback `send_audio`). The original **text is still sent** so a TTS failure never
    costs the answer.
 
-## 8. Credential intake (LAN web form)
+## 8. Credential intake — reuse `vault_web`
 
-`infrastructure/skills/intake_server.py` — `CredentialIntakeServer`.
+Ari already ships a LAN credential-intake web form: `vault_web` (`VaultWebMaintainer`,
+`/vault` command; see `2026-09-26-ari-vault-web-maintainer-design.md`). It already provides
+exactly what a skill needs, and does it more securely than a from-scratch server:
 
-This is the only new externally-reachable surface, so it is deliberately small and
-locked down.
+- HTTPS self-signed (SAN = LAN IP), LAN-IP autodetect, on-demand start + idle reaper
+  (`sweep_and_maybe_stop`, run by the scheduler).
+- 256-bit token (`secrets.token_urlsafe(32)`), 10-min TTL, session (multi-submit).
+- A form listing the writable secret **names** (never values) with set/missing badges;
+  `POST` writes `FernetVault.set()`; the registry picks up the new secret on the next
+  vault-mtime refresh (no restart).
 
-- **Trigger:** when the owner asks to enable a skill in `needs_secrets`, the management
-  tool calls `intake.request(skill_name, missing_secrets)`, which mints a one-time token
-  and returns a URL `http://<lan-ip>:<port>/s/<token>`. Ari sends that URL by Telegram.
-- **LAN IP detection:** open a UDP socket, `connect(("10.255.255.255", 1))` (sends
-  nothing), read `getsockname()[0]`. Overridable with `ARI_LAN_HOST`. If detection fails,
-  fall back to `127.0.0.1` and warn (owner must be on the same machine).
-- **Bind:** to the detected LAN IP (not `0.0.0.0`, never the public interface) on
-  `ARI_SKILL_INTAKE_PORT` (default `8770`).
-- **Token store:** in-memory only, `{token: IntakeRequest(skill, secrets, expiry)}`.
-  Single use, TTL `ARI_SKILL_INTAKE_TTL` (default `600` s), high entropy
-  (`secrets.token_urlsafe`).
-- **Routes:**
-  - `GET /s/<token>` → an HTML form with one password field per missing secret. Unknown
-    or expired token → generic 404 (no enumeration).
-  - `POST /s/<token>` → read the field values, `FernetVault.set(name, value)` for each,
-    **burn the token**, trigger a `SkillManager` reload so the skill activates, and show a
-    "listo, ya podés cerrar esta pestaña" page. Ari confirms activation by Telegram.
-- **Lifecycle:** started on demand; stopped once there are no pending (unexpired) tokens.
-  It does not stay listening between requests.
-- **Implementation:** stdlib `http.server.ThreadingHTTPServer` on a daemon thread (no new
-  dependency); the request handler calls back into the vault + manager. (aiohttp is a
-  possible alternative but adds a dependency.)
-- **HTTPS:** v1 ships plain HTTP on the LAN. If the LAN is untrusted, a self-signed
-  certificate is an opt-in (`ARI_SKILL_INTAKE_TLS`) — noted, not built in v1.
+This change therefore builds **no** new server. The only gap: the writable allowlist is
+`configurable_secret_names(servers_json)` = `${VAR}` in `mcp/servers.json` minus
+`ARI_FS_ROOT`, which does **not** include a skill's `GROQ_API_KEY` (declared in
+`skill.json`, not `servers.json`). Two small edits close it:
+
+1. `SkillManager.required_secret_names() -> list[str]` — the deduplicated union of
+   `required_secrets` across discovered skills.
+2. `VaultWebMaintainer` gains an optional `extra_names: Callable[[], list[str]] | None`.
+   In `new_link()` the writable names become
+   `dedup(configurable_secret_names(servers_json) + extra_names())`. `None` keeps today's
+   behavior exactly. The composition root passes `skill_manager.required_secret_names`.
+
+The `VaultWebServer` allowlist check (name outside the allowlist → `400`) is unchanged; a
+skill secret is now simply a member of that allowlist.
+
+**Skill-enable flow:** when the owner enables a skill whose secrets are missing, the
+management tool calls `maintainer.new_link()` and returns the existing HTTPS
+`https://<lan-ip>:<port>/v/<token>` link. The form now shows the skill's secret name with a
+"falta" badge; loading a value stores it encrypted and the skill activates on the next
+`SkillManager` reload. Nothing about the credential ever touches the Telegram chat or logs.
 
 ## 9. Groq audio skill (first-party)
 
@@ -241,8 +244,8 @@ tools in `ari_tools.py`), so natural-language requests work:
 
 - `skill_list()` → status of all skills.
 - `skill_enable(name)` / `skill_disable(name)` → flip `enabled`, reload. If enabling a
-  skill in `needs_secrets`, automatically call the intake flow and return the LAN link.
-- `skill_request_secret(name)` → (re)issue the LAN link for a skill's missing secrets.
+  skill in `needs_secrets`, call `VaultWebMaintainer.new_link()` and return the HTTPS link.
+- `skill_request_secret(name)` → (re)issue the `vault_web` link for missing secrets.
 
 All are gated by `Authorizer.is_owner`; non-owners cannot see or manage skills.
 
@@ -251,14 +254,11 @@ All are gated by `Authorizer.is_owner`; non-owners cannot see or manage skills.
 | Variable | Default | Purpose |
 |---|---|---|
 | `ARI_SKILLS_DIR` | `./skills` | Where local skill plugins live |
-| `ARI_SKILL_INTAKE_PORT` | `8770` | LAN credential-intake server port |
-| `ARI_SKILL_INTAKE_TTL` | `600` | One-time token TTL (seconds) |
-| `ARI_LAN_HOST` | auto-detect | Override the LAN bind IP |
-| `ARI_SKILL_INTAKE_TLS` | off | (Noted) opt-in self-signed HTTPS for the intake form |
 
+Credential intake reuses `vault_web`'s existing config (`ARI_VAULT_WEB_PORT`,
+`ARI_VAULT_WEB_TTL_MINUTES`, `ARI_VAULT_WEB_BIND`) — **no new intake variables**.
 `GROQ_API_KEY` is **not** a `Settings` field — it lives in the vault and is read only by
-the skill via `ctx.secret`. `Settings` gains `skills_dir`, `skill_intake_port`,
-`skill_intake_ttl`, `lan_host` (all `ARI_`-prefixed).
+the skill via `ctx.secret`. `Settings` gains `skills_dir` (`ARI_`-prefixed).
 
 ## 12. Architecture (new/changed)
 
@@ -267,30 +267,35 @@ domain/skills/
   models.py              Attachment, RawInbound, Delivery, InboundContext
   contracts.py           SkillContext, InboundTransform, OutboundTransform (Protocols)
 application/skills/
-  skill_manager.py       discover, validate secrets (vault→env→.env), load, expose hooks, hot-reload
+  skill_manager.py       discover, validate secrets (vault→env→.env), load, expose hooks,
+                         hot-reload, required_secret_names()
 infrastructure/skills/
   skill_loader.py        importlib loader (isolated, mockable)
-  intake_server.py       CredentialIntakeServer: LAN-bound, one-time token, ephemeral
 skills/groq_audio/
   skill.json             manifest (required_secrets: GROQ_API_KEY)
   skill.py               build_skill: on_inbound (STT) + on_outbound (TTS)
   groq_client.py         Groq STT/TTS HTTP client
+infrastructure/vault_web/maintainer.py  EXTEND: optional extra_names provider unioned into
+                         the writable allowlist in new_link()
 application/ari_tools.py + skill_list / skill_enable / skill_disable / skill_request_secret (owner-only)
 infrastructure/gateway/telegram_adapter.py  voice branch → RawInbound; Delivery → send_voice
-config/settings.py       + skills_dir, skill_intake_port, skill_intake_ttl, lan_host
-main.py (build)          construct SkillManager + CredentialIntakeServer; inject into gateway & sender
+config/settings.py       + skills_dir
+main.py (build)          construct SkillManager; inject into gateway & sender; pass
+                         skill_manager.required_secret_names as VaultWebMaintainer extra_names
 ```
 
-No new hard dependency for the manager or intake (stdlib `http.server`). The Groq client
-uses the existing HTTP stack (`httpx`, already present via PTB).
+No new dependency: credential intake reuses `vault_web` (stdlib `http.server` + TLS via the
+existing `cryptography` dep). The Groq client uses the existing HTTP stack (`httpx`, already
+present via PTB — verified `httpx 0.28.1`, PTB 22.8).
 
 ## 13. Security boundary (honest)
 
 - **Secrets never enter the Telegram chat or logs.** They are entered in a LAN form and
   stored with `FernetVault.set()`.
-- **Intake server** is LAN-bound, one-time-token, short-TTL, and ephemeral. The main
-  residual risk is an untrusted/shared LAN with plain HTTP; `ARI_SKILL_INTAKE_TLS` is the
-  documented mitigation. Misbinding to `0.0.0.0` is prevented by design (explicit LAN IP).
+- **Credential intake** inherits `vault_web`'s posture: HTTPS self-signed, 256-bit token,
+  10-min TTL, on-demand + idle-reaped server, redacted logging, allowlisted names only. The
+  documented residual risk (anyone on the LAN who obtains the live link within the TTL) is
+  the accepted LAN posture from the vault-web design; this change does not weaken it.
 - **In-process execution** is safe in v1 only because skills are first-party
   (owner/Ari-written). Running *generated* skills from a Telegram request is explicitly
   **out of scope** here (Phase 2) precisely because it needs a sandbox + contract
@@ -311,7 +316,8 @@ uses the existing HTTP stack (`httpx`, already present via PTB).
 - Missing secret → skill stays `needs_secrets`; Ari returns the LAN link instead of
   crashing startup.
 - Skill raises on load → isolated, marked `failed`, rest of Ari unaffected.
-- Intake token unknown/expired → generic 404; expired tokens are swept on access.
+- Intake token unknown/expired → `vault_web` returns `403` (unchanged); a name not in the
+  (now skill-extended) allowlist → `400` (unchanged).
 
 ## 15. Testing (pytest + fakes; `python3 -m pytest`, `pythonpath=src`)
 
@@ -323,9 +329,12 @@ Fast (no network, no Telegram, no real HTTP server):
 - Contract tests with a `FakeSkill` returning fixed text/Delivery → gateway invokes
   `on_inbound`, sender invokes `on_outbound`, `InboundContext` is threaded correctly.
 - `test_groq_client.py`: STT and TTS with **mocked** httpx; error and size handling.
-- `test_intake_server.py`: token issue → GET form → POST stores into `FakeVault` → token
-  burned → second use is 404; TTL expiry; bind uses the injected LAN host, not `0.0.0.0`;
-  posted values never logged.
+- `SkillManager.required_secret_names()`: deduplicated union of `required_secrets` across
+  skills.
+- `vault_web` allowlist extension: `VaultWebMaintainer`/`configurable_secret_names` with an
+  `extra_names` provider includes a skill secret in the writable names; a `POST` of that
+  skill secret writes to `FakeVault`; a name in neither `servers.json` nor the skill set →
+  `400`; `extra_names=None` reproduces today's behavior (no regression).
 - `test_telegram_adapter.py` (extend): voice message → `RawInbound` with attachment;
   `Delivery("voice")` → `send_voice` call (fallback `send_audio`).
 - `ari_tools` skill tools: owner-only gating; `skill_enable` on a `needs_secrets` skill
@@ -348,15 +357,18 @@ Slow (`marker slow`, skipped without creds):
 ## 17. Acceptance criteria
 
 1. Owner asks Ari (Telegram) to enable `groq_audio`; the key is missing → Ari replies with
-   a `http://<lan-ip>:<port>/s/<token>` link.
-2. Opening the link on the LAN shows a form; submitting `GROQ_API_KEY` stores it in
-   `vault.enc` (encrypted), burns the token, and activates the skill. The key never
-   appears in the Telegram chat or logs.
+   the `vault_web` `https://<lan-ip>:<port>/v/<token>` link.
+2. Opening the link on the LAN shows the form with `GROQ_API_KEY` listed as "falta"
+   (because the allowlist was extended with the skill's `required_secrets`); submitting it
+   stores it in `vault.enc` (encrypted) and the skill activates on the next reload. The key
+   never appears in the Telegram chat or logs.
 3. A Telegram voice note is transcribed via Groq and answered by Ari as if typed.
 4. When the turn came from voice, Ari's reply is delivered as **text + voice**; if TTS
    fails, text still arrives.
 5. Disabling the skill (Telegram) stops both hooks without a restart; re-enabling restores
    them (hot-reload).
 6. A skill that raises on load is isolated (`failed`) and the bot keeps running.
-7. The intake server binds to the LAN IP (not `0.0.0.0`), a used/expired token returns
-   404, and the server stops when no tokens are pending.
+7. Credential intake is the existing `vault_web`: the link is HTTPS-only (a plain-HTTP
+   client cannot connect), an expired token returns `403`, and the server is idle-reaped —
+   with `GROQ_API_KEY` writable only because the allowlist was extended (a non-allowlisted
+   name still returns `400`).
