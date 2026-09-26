@@ -42,7 +42,13 @@ def test_symlink_root_into_project_is_unsafe(tmp_path):
     project.mkdir()
     (project / ".env").write_text("x")
     link = tmp_path / "link"
-    os.symlink(project, link)
+    try:
+        os.symlink(project, link, target_is_directory=True)
+    except OSError:
+        if os.name != "nt":
+            raise
+        import _winapi  # no symlink privilege on Windows: a junction resolves the same
+        _winapi.CreateJunction(str(project), str(link))
     assert unsafe_fs_root(str(link), [str(project / ".env")]) == str(project / ".env")
 
 
