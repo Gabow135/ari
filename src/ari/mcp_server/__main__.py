@@ -8,6 +8,7 @@ from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import open_existing
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
+from ari.domain.tools.ari_permissions import allowed_ari_tools
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 from ari.mcp_server.server import actor_from_env, build_server
 
@@ -33,7 +34,11 @@ async def _get_tools() -> AriTools:
 
 
 def main() -> None:
-    build_server(_get_tools).run()
+    role, context = os.environ.get("ARI_ROLE"), os.environ.get("ARI_CONTEXT")
+    # A bare handshake (no actor env yet) gets the full catalogue; once Ari's
+    # per-turn env is set, only the tools that role/context allow are exposed.
+    allowed = allowed_ari_tools(role == "owner", context) if role and context else None
+    build_server(_get_tools, allowed).run()
 
 
 if __name__ == "__main__":

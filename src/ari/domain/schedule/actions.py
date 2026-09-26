@@ -1,4 +1,6 @@
-"""Validation of the <ari-action> blocks Ari emits (pure: no I/O)."""
+"""Validation for creating a scheduled reminder or task (pure: no I/O). Used by
+``AriTools.agendar`` (the real path, via Ari's MCP tools) and by anything else
+that needs to validate an ``at``/``cron`` pair against the same rules."""
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone, tzinfo
 
@@ -24,11 +26,6 @@ class CreateAction:
     cron: str | None  # recurring, local time
 
 
-@dataclass(frozen=True)
-class CancelAction:
-    id: int
-
-
 def next_cron_run(cron: str, after_utc: datetime, tz: tzinfo) -> datetime:
     nxt = croniter(cron, after_utc.astimezone(tz)).get_next(datetime)
     return nxt.astimezone(timezone.utc)
@@ -40,15 +37,10 @@ def _interval_ok(cron: str, now_utc: datetime, tz: tzinfo) -> bool:
     return all(b - a >= MIN_INTERVAL for a, b in zip(runs, runs[1:]))
 
 
-def parse_action(data: object, now_utc: datetime, tz: tzinfo) -> CreateAction | CancelAction:
+def parse_action(data: object, now_utc: datetime, tz: tzinfo) -> CreateAction:
     if not isinstance(data, dict):
         raise ActionError("formato inválido")
     kind = data.get("type")
-    if kind == "cancel":
-        try:
-            return CancelAction(int(data["id"]))
-        except (KeyError, TypeError, ValueError):
-            raise ActionError("falta el número del recordatorio a cancelar") from None
     if kind not in (REMINDER, TASK):
         raise ActionError(f"tipo de acción desconocido: {kind!r}")
     text = str(data.get("text") or "").strip()

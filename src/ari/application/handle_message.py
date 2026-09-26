@@ -15,7 +15,8 @@ from ari.domain.tools.ari_permissions import CHAT, TASK
 log = logging.getLogger("ari.handle_message")
 BLANK_REPLY = "Mándame un mensaje de texto y con gusto te ayudo."
 TIMEOUT_REPLY = ("Me tardé demasiado con las herramientas; intenta con algo más "
-                 "acotado.")
+                 "acotado. Si me pediste agendar algo, revisa /recordatorios antes "
+                 "de repetirlo.")
 
 
 class HandleMessage:
@@ -54,10 +55,12 @@ class HandleMessage:
         summary = await self._safe(self._memory.get_summary(incoming.user_id), None)
         recalls = await self._retrieve(incoming.user_id, text)
 
-        extra = (await self._safe(self._actions.context(incoming.user_id), None)
+        context = CHAT if allow_actions else TASK
+        is_owner = self._is_owner(incoming.user_id)
+        extra = (await self._safe(self._actions.context(incoming.user_id, context, is_owner),
+                                  None)
                  if self._actions else None)
 
-        context = CHAT if allow_actions else TASK
         turn_cm = (self._tools.turn(incoming.user_id, context, incoming.display_name,
                                     incoming.chat_id) if self._tools else no_turn())
         timed_out = False
@@ -66,7 +69,7 @@ class HandleMessage:
             async with turn_cm as turn:
                 system = self._agent.build_prompt(
                     facts, summary, recalls, soul=self._soul(),
-                    is_owner=self._is_owner(incoming.user_id), extra=extra,
+                    is_owner=is_owner, extra=extra,
                     tools=turn.view if turn else None)
                 try:
                     reply = await self._llm.complete(

@@ -1,10 +1,11 @@
 """Ari's own MCP server (stdio). Launched by the Claude CLI once per turn; the
 actor, role and context come only from the env Ari wrote in the turn config."""
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 
 from mcp.server.mcpserver import MCPServer
 
 from ari.application.ari_tools import Actor, AriTools
+from ari.domain.tools.ari_permissions import ARI_TOOLS
 
 _REQUIRED = ("ARI_ACTOR_ID", "ARI_ACTOR_CHAT", "ARI_ROLE", "ARI_CONTEXT", "ARI_TURN_ID")
 
@@ -17,10 +18,18 @@ def actor_from_env(env: Mapping[str, str]) -> Actor:
                  env["ARI_ROLE"] == "owner", env["ARI_CONTEXT"], env["ARI_TURN_ID"])
 
 
-def build_server(get_tools: Callable[[], Awaitable[AriTools]]) -> MCPServer:
+def build_server(get_tools: Callable[[], Awaitable[AriTools]],
+                 allowed: Iterable[str] | None = None) -> MCPServer:
+    """With ``allowed`` given, only those tool names are registered (used for a
+    per-turn server whose actor env pins the context/role in advance); ``None``
+    (a bare handshake, no actor env yet) registers the full catalogue."""
     server = MCPServer("ari")
+    names = set(ARI_TOOLS) if allowed is None else set(allowed)
 
-    @server.tool()
+    def tool(name: str):
+        return server.tool() if name in names else (lambda fn: fn)
+
+    @tool("agendar")
     async def agendar(tipo: str, texto: str, at: str | None = None,
                       cron: str | None = None) -> str:
         """Agenda un recordatorio (se envía el texto a la hora indicada) o una tarea
@@ -29,47 +38,47 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]]) -> MCPServer:
         (5 campos, hora local, mínimo cada 1 hora) para repetir."""
         return await (await get_tools()).agendar(tipo, texto, at, cron)
 
-    @server.tool()
+    @tool("listar_agenda")
     async def listar_agenda() -> str:
         """Lista los recordatorios y tareas activos del usuario con su #número."""
         return await (await get_tools()).listar_agenda()
 
-    @server.tool()
+    @tool("cancelar")
     async def cancelar(id: int) -> str:
         """Cancela un recordatorio o tarea del usuario por su #número."""
         return await (await get_tools()).cancelar(id)
 
-    @server.tool()
+    @tool("recordar_dato")
     async def recordar_dato(clave: str, valor: str) -> str:
         """Guarda o corrige un dato estable del usuario (p. ej. clave "hija", valor "Ana")."""
         return await (await get_tools()).recordar_dato(clave, valor)
 
-    @server.tool()
+    @tool("olvidar_dato")
     async def olvidar_dato(clave: str) -> str:
         """Borra un dato guardado del usuario por su clave."""
         return await (await get_tools()).olvidar_dato(clave)
 
-    @server.tool()
+    @tool("ver_datos")
     async def ver_datos() -> str:
         """Muestra los datos guardados del usuario."""
         return await (await get_tools()).ver_datos()
 
-    @server.tool()
+    @tool("aprobar_acceso")
     async def aprobar_acceso(codigo_o_usuario: str) -> str:
         """(Solo el creador) Aprueba una solicitud de acceso por su código o por @usuario."""
         return await (await get_tools()).aprobar_acceso(codigo_o_usuario)
 
-    @server.tool()
+    @tool("revocar_acceso")
     async def revocar_acceso(usuario: str) -> str:
         """(Solo el creador) Quita el acceso a un usuario por @usuario o id."""
         return await (await get_tools()).revocar_acceso(usuario)
 
-    @server.tool()
+    @tool("ver_accesos")
     async def ver_accesos() -> str:
         """(Solo el creador) Lista las solicitudes pendientes y los usuarios aprobados."""
         return await (await get_tools()).ver_accesos()
 
-    @server.tool()
+    @tool("enviar_mensaje")
     async def enviar_mensaje(destinatario: str, texto: str) -> str:
         """(Solo el creador) Envía un mensaje firmado a un usuario aprobado, por @usuario o id."""
         return await (await get_tools()).enviar_mensaje(destinatario, texto)

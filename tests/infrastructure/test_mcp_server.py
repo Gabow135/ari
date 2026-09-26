@@ -45,6 +45,22 @@ async def test_server_registers_exactly_the_catalogue_and_calls_tools():
         await conn.close()
 
 
+async def test_build_server_with_allowed_list_exposes_only_those_tools():
+    conn = await connect(":memory:", embedding_dim=4)
+    tools = AriTools(actor_from_env(ENV), schedule=SqliteScheduleStore(conn),
+                     memory=SqliteMemoryAdapter(conn, embedding_dim=4),
+                     turn_log=SqliteTurnLog(conn), tz=TZ, max_items=20, clock=lambda: NOW)
+
+    async def get_tools():
+        return tools
+
+    server = build_server(get_tools, allowed=("listar_agenda", "ver_datos"))
+    try:
+        assert {t.name for t in await server.list_tools()} == {"listar_agenda", "ver_datos"}
+    finally:
+        await conn.close()
+
+
 async def test_stdio_handshake_lists_tools_without_actor_env():
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "ari.mcp_server",

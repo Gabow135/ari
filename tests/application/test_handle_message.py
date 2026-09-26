@@ -53,12 +53,12 @@ async def test_prompt_uses_soul_and_role():
 
 
 class _ContextOnly:
-    async def context(self, user_id):
+    async def context(self, user_id, context="chat", is_owner=False):
         return "## CONTEXTO-AGENDA"
 
 
 class _BrokenContextActions:
-    async def context(self, user_id):
+    async def context(self, user_id, context="chat", is_owner=False):
         raise RuntimeError("db is down")
 
 

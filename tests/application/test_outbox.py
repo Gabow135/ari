@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -44,3 +44,37 @@ async def test_failed_send_retries_then_drops(log):
     assert len(await log.outbox_pending()) == 1
     await flusher()
     assert await log.outbox_pending() == []
+
+
+class _CountingPurgeLog:
+    """No outbox items to send: only purge_receipts is exercised, and counted."""
+
+    def __init__(self):
+        self.purges: list = []
+
+    async def outbox_pending(self):
+        return []
+
+    async def purge_receipts(self, before):
+        self.purges.append(before)
+        return 0
+
+
+async def test_purges_receipts_at_most_once_per_hour():
+    async def send(chat_id, text):
+        return True
+
+    fake_log = _CountingPurgeLog()
+    now = {"t": NOW}
+    flusher = OutboxFlusher(fake_log, send, clock=lambda: now["t"])
+
+    await flusher()
+    assert len(fake_log.purges) == 1  # first flush always purges
+
+    now["t"] += timedelta(minutes=30)
+    await flusher()
+    assert len(fake_log.purges) == 1  # within the hour: no second purge
+
+    now["t"] += timedelta(minutes=31)
+    await flusher()
+    assert len(fake_log.purges) == 2  # an hour elapsed since the last purge

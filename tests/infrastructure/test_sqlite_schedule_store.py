@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from ari.domain.schedule.entities import ACTIVE, CANCELLED, DONE, PAUSED, REMINDER, RUNNING, TASK
-from ari.infrastructure.persistence.db import connect
+from ari.infrastructure.persistence.db import connect, open_existing
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 
 T0 = datetime(2026, 9, 25, 20, 0, tzinfo=timezone.utc)
@@ -94,6 +94,42 @@ async def test_reschedule_record_failure_finish_guard_against_revoked_user(store
 
     await store.finish(a, T0)
     assert (await store.get(a)).status == CANCELLED
+
+
+async def test_claim_due_never_flips_a_row_cancelled_out_of_band(tmp_path):
+    """Cross-process race: the MCP server process cancels an item in the window
+    between claim_due's read and its write. Simulated here by intercepting the
+    store's own write and, right before it runs, committing the cancellation
+    through a second real connection to the same file DB — the claim must
+    guard on status = ACTIVE so that row is neither flipped to RUNNING nor
+    returned."""
+    db_path = str(tmp_path / "ari.db")
+    conn = await connect(db_path, embedding_dim=4)
+    store = SqliteScheduleStore(conn)
+    item_id = await store.add("u1", "c1", REMINDER, "a", T0, None)
+
+    original_execute = conn.execute
+
+    async def racing_execute(sql, parameters=None):
+        if "UPDATE schedules SET status" in sql:
+            other = await open_existing(db_path)
+            try:
+                await other.execute("UPDATE schedules SET status = ? WHERE id = ?",
+                                    (CANCELLED, item_id))
+                await other.commit()
+            finally:
+                await other.close()
+        return await original_execute(sql, parameters)
+
+    conn.execute = racing_execute
+    try:
+        claimed = await store.claim_due(T0)
+    finally:
+        conn.execute = original_execute
+
+    assert claimed == []
+    assert (await store.get(item_id)).status == CANCELLED
+    await conn.close()
 
 
 async def test_kv(store):

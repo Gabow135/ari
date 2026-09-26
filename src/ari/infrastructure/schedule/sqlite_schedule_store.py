@@ -1,5 +1,4 @@
 import asyncio
-from dataclasses import replace
 from datetime import datetime, timezone
 
 import aiosqlite
@@ -64,17 +63,20 @@ class SqliteScheduleStore:
         await self._write("UPDATE schedules SET status = ? WHERE id = ?", (status, item_id))
 
     async def claim_due(self, now: datetime) -> list[ScheduleItem]:
+        # A single UPDATE ... RETURNING: the status = ACTIVE guard is checked and
+        # applied atomically by SQLite, so a row cancelled by another process
+        # (e.g. Ari's MCP server) right up to the moment this runs can never be
+        # read as ACTIVE here and then blindly flipped to RUNNING afterwards —
+        # there is no separate read step for such a write to race against.
         async with self._lock:
-            rows = await self._conn.execute_fetchall(
-                f"SELECT {_COLS} FROM schedules WHERE status = ? AND next_run_at <= ? "
-                "ORDER BY next_run_at, id", (ACTIVE, _iso(now)))
-            if rows:
-                ids = [r["id"] for r in rows]
-                marks = ",".join("?" * len(ids))
-                await self._conn.execute(
-                    f"UPDATE schedules SET status = ? WHERE id IN ({marks})", (RUNNING, *ids))
-                await self._conn.commit()
-        return [replace(_item(r), status=RUNNING) for r in rows]
+            cur = await self._conn.execute(
+                f"UPDATE schedules SET status = ? WHERE status = ? AND next_run_at <= ? "
+                f"RETURNING {_COLS}", (RUNNING, ACTIVE, _iso(now)))
+            rows = await cur.fetchall()
+            await self._conn.commit()
+        items = [_item(r) for r in rows]
+        items.sort(key=lambda i: (i.next_run_at, i.id))
+        return items
 
     async def reschedule(self, item_id: int, next_run_at: datetime, now: datetime) -> None:
         # Guarded by status = RUNNING: an item cancelled mid-flight (e.g. the

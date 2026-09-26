@@ -11,10 +11,12 @@ class OutboxFlusher:
     send each message once."""
 
     def __init__(self, turn_log, send, clock, max_attempts: int = 3,
-                 keep_receipts: timedelta = timedelta(days=1)):
+                 keep_receipts: timedelta = timedelta(days=1),
+                 purge_interval: timedelta = timedelta(hours=1)):
         self._log, self._send, self._clock = turn_log, send, clock
-        self._max, self._keep = max_attempts, keep_receipts
+        self._max, self._keep, self._purge_interval = max_attempts, keep_receipts, purge_interval
         self._lock = asyncio.Lock()
+        self._last_purge = None  # runs on the first flush, then at most hourly
 
     async def __call__(self) -> None:
         async with self._lock:
@@ -26,4 +28,7 @@ class OutboxFlusher:
                     log.warning("dropping outbox message %s to %s after %s attempts",
                                 item_id, chat_id, self._max)
                     await self._log.outbox_drop(item_id)
-            await self._log.purge_receipts(self._clock() - self._keep)
+            now = self._clock()
+            if self._last_purge is None or now - self._last_purge >= self._purge_interval:
+                await self._log.purge_receipts(now - self._keep)
+                self._last_purge = now

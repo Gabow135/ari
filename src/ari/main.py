@@ -88,6 +88,7 @@ class Components:
     soul: SoulLoader
     tools: ToolPolicy
     turn_log: SqliteTurnLog
+    turn_config_writer: TurnConfigWriter
 
 
 def cli_env(settings: Settings) -> dict | None:
@@ -113,8 +114,9 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         "ARI_MAX_ITEMS": str(settings.max_items_per_user),
         "ARI_OWNER_IDS": ",".join(sorted(settings.owner_id_set)),
     })
+    turn_config_writer = TurnConfigWriter(os.path.join(settings.claude_config_dir, "mcp"))
     tools = ToolPolicy(registry, Authorizer(settings.owner_id_set).is_owner, ari=ari_spec,
-                       writer=TurnConfigWriter(os.path.join(settings.claude_config_dir, "mcp")))
+                       writer=turn_config_writer)
     llm = MonitoredLLM(ClaudeCodeCliAdapter(model=settings.model,
                                             claude_bin=settings.claude_bin, cli_env=env,
                                             timeout=settings.chat_timeout_seconds))
@@ -133,7 +135,7 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         turn_log=turn_log,
     )
     return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul, tools,
-                      turn_log)
+                      turn_log, turn_config_writer)
 
 
 def main() -> None:
@@ -217,6 +219,14 @@ def main() -> None:
 
         due = RunDueItems(c.schedule_store, send, run_task, notices.task_paused, tz, _utcnow)
         app.bot_data["due"] = due
+
+        # Orphaned per-turn MCP configs (e.g. a crash between write and the
+        # `finally` that removes them) never carry secrets beyond the DB path,
+        # but they do carry actor identity: swept away before anything else runs.
+        swept = c.turn_config_writer.sweep()
+        if swept:
+            logging.info("swept %d orphaned turn config file(s)", swept)
+
         heartbeat = Heartbeat(
             llm=c.llm, memory=c.memory, store=c.schedule_store, agent=c.agent,
             soul=c.soul, checklist=SoulLoader(settings.soul_dir, "HEARTBEAT.md"),

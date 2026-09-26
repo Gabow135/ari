@@ -5,7 +5,6 @@ import pytest
 
 from ari.domain.schedule.actions import (
     ActionError,
-    CancelAction,
     CreateAction,
     describe_cron,
     next_cron_run,
@@ -34,10 +33,6 @@ def test_recurring_task():
     assert act == CreateAction(TASK, "resumen", None, "0 8 * * 1")
 
 
-def test_cancel():
-    assert parse_action({"type": "cancel", "id": "12"}, NOW, TZ) == CancelAction(12)
-
-
 @pytest.mark.parametrize("data,reason", [
     ({"type": "reminder", "at": "2026-09-25T10:00:00-05:00", "text": "x"}, "ya pasó"),
     ({"type": "reminder", "at": "2028-01-01T10:00:00-05:00", "text": "x"}, "más de un año"),
@@ -49,7 +44,7 @@ def test_cancel():
     ({"type": "reminder", "at": "2026-09-26T09:00", "text": ""}, "texto"),
     ({"type": "reminder", "at": "2026-09-26T09:00", "text": "x" * 501}, "largo"),
     ({"type": "explode"}, "desconocido"),
-    ({"type": "cancel"}, "número"),
+    ({"type": "cancel"}, "desconocido"),
     ("not a dict", "formato"),
 ])
 def test_invalid_actions_explain_why(data, reason):
