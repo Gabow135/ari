@@ -15,7 +15,8 @@ def _sans(cert_path):
 def test_generates_cert_and_key_with_ip_san(tmp_path):
     c, k = ensure_cert(str(tmp_path), "192.168.1.50")
     assert os.path.exists(c) and os.path.exists(k)
-    assert (os.stat(k).st_mode & 0o777) == 0o600
+    if os.name != "nt":  # Windows has no POSIX mode bits
+        assert (os.stat(k).st_mode & 0o777) == 0o600
     assert ipaddress.ip_address("192.168.1.50") in _sans(c)
 
 
