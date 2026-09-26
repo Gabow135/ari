@@ -59,6 +59,7 @@ class McpRegistry:
         self._write_ok: dict[bool, bool] = {True: True, False: True}
         self._vault = vault
         self._sensitive = tuple(sensitive_paths)
+        self._vault_path = getattr(vault, "path", None)
 
     # ---- public API -------------------------------------------------------
 
@@ -86,7 +87,8 @@ class McpRegistry:
         return self._candidate_names(is_owner)
 
     def _refresh(self) -> None:
-        stamps = (_stamp(self._config_path), _stamp(self._env_file))
+        stamps = (_stamp(self._config_path), _stamp(self._env_file),
+                  _stamp(self._vault_path) if self._vault_path else None)
         if stamps == self._stamps:
             return
         if stamps[0] is None:

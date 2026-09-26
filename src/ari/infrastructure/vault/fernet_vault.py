@@ -17,6 +17,10 @@ class FernetVault(SecretVault):
         self._path = os.path.expanduser(path)
         self._fernet = Fernet(key.encode()) if key else None
 
+    @property
+    def path(self) -> str:
+        return self._path
+
     def _load(self) -> dict:
         if self._fernet is None or not os.path.exists(self._path):
             return {}
