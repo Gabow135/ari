@@ -47,6 +47,11 @@ CAPABILITIES: list[Capability] = [
         summary="Ver el estado de tus conexiones MCP y de la web: cuáles están "
                 "configuradas y qué falta en las que no."),
     Capability(
+        command="vault", menu="Cargar credenciales (link seguro)", owner_only=True,
+        summary="Genera un link HTTPS de un solo uso (vence pronto) para cargar "
+                "credenciales MCP en la bóveda cifrada desde el navegador, sin terminal.",
+        usage="/vault → Ari te manda el link; ábrelo en la misma red y carga los valores."),
+    Capability(
         command="code", menu="Tarea de código: /code [dir:ruta] instrucción", owner_only=True,
         summary="Programar en los proyectos de la carpeta permitida usando Claude Code "
                 "con herramientas (leer, editar, ejecutar comandos).",

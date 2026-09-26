@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import logging
 import os
+import os.path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -44,6 +45,7 @@ from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStor
 from ari.infrastructure.soul.soul_loader import SoulLoader
 from ari.infrastructure.tools.mcp_registry import McpRegistry
 from ari.infrastructure.vault.fernet_vault import FernetVault
+from ari.infrastructure.vault_web.maintainer import VaultWebMaintainer
 from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
@@ -79,6 +81,7 @@ class Components:
     agent: AgentService
     soul: SoulLoader
     tools: ToolPolicy
+    vault_web: VaultWebMaintainer
 
 
 def cli_env(settings: Settings) -> dict | None:
@@ -119,7 +122,12 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         actions=actions,
         tools=tools,
     )
-    return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul, tools)
+    cert_dir = os.path.dirname(os.path.expanduser(settings.vault_path))
+    vault_web = VaultWebMaintainer(
+        vault, settings.mcp_config, cert_dir=cert_dir, port=settings.vault_web_port,
+        bind=settings.vault_web_bind, ttl_minutes=settings.vault_web_ttl_minutes)
+    return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul, tools,
+                      vault_web)
 
 
 def main() -> None:
@@ -137,6 +145,7 @@ def main() -> None:
         app.bot_data["conn"] = c.conn
         app.bot_data["actions"] = c.actions
         app.bot_data["tools"] = c.tools
+        app.bot_data["vault_web"] = c.vault_web
         for line in c.tools.status_text().splitlines():
             logging.info("conexión: %s", line)
         access_store = SqliteAccessStore(c.conn)
@@ -219,6 +228,9 @@ def main() -> None:
                 logging.warning(
                     "timed out after %ss draining in-flight scheduled tasks; "
                     "closing the DB anyway", _DRAIN_TIMEOUT)
+        vw = app.bot_data.get("vault_web")
+        if vw is not None:
+            vw.stop()
         conn = app.bot_data.get("conn")
         if conn is not None:
             await conn.close()
@@ -353,6 +365,21 @@ def main() -> None:
             return
         await _reply_parts(msg, app.bot_data["tools"].status_text())
 
+    async def _on_vault(update, _context) -> None:
+        """/vault (owner only): reply with a one-time HTTPS link to load secrets."""
+        msg = update.effective_message
+        if msg is None or msg.from_user is None:
+            return
+        if not await _admit(msg):
+            return
+        if not app.bot_data["gate"].is_owner(str(msg.from_user.id)):
+            await msg.reply_text("Ese comando es solo para el dueño.")
+            return
+        link = app.bot_data["vault_web"].new_link()
+        await _reply_parts(
+            msg, f"Cargá tus credenciales acá (vence pronto; el navegador va a advertir "
+                 f"por el certificado, aceptá una vez):\n{link}")
+
     async def _on_access_admin(update, _context) -> None:
         """Owner-only /aprobar, /revocar, /accesos."""
         msg = update.effective_message
@@ -373,6 +400,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", _on_start))
     app.add_handler(CommandHandler("recordatorios", _on_reminders))
     app.add_handler(CommandHandler("conexiones", _on_connections))
+    app.add_handler(CommandHandler("vault", _on_vault))
     app.add_handler(CommandHandler(list(ADMIN_COMMANDS), _on_access_admin))
     app.add_handler(CommandHandler(list(LIFECYCLE_COMMANDS), _on_lifecycle))
     app.add_handler(CommandHandler(["code", "fase2"], _on_command))
