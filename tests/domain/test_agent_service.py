@@ -1,5 +1,6 @@
 from ari.domain.agent.agent_service import AgentService
 from ari.domain.memory.entities import Fact, Recall, Summary
+from ari.domain.tools.toolset import ToolsView
 
 
 def test_build_prompt_includes_all_layers():
@@ -47,3 +48,15 @@ def test_user_prompt_hides_admin_commands():
 def test_extra_section_is_appended():
     prompt = AgentService().build_prompt([], None, [], extra="## Fecha y hora actual\nhoy")
     assert "## Fecha y hora actual\nhoy" in prompt
+
+
+def test_tools_view_is_rendered_and_drops_web_limitation():
+    view = ToolsView("## Tus herramientas y conexiones\n- 🌐 web", has_web=True, has_mcp=False)
+    prompt = AgentService().build_prompt([], None, [], is_owner=True, tools=view)
+    assert "## Tus herramientas y conexiones" in prompt
+    assert "no puedes navegar la web" not in prompt
+
+
+def test_without_tools_view_prompt_is_unchanged():
+    prompt = AgentService().build_prompt([], None, [], is_owner=True)
+    assert "no puedes navegar la web" in prompt

@@ -1,6 +1,7 @@
 from ari.domain.agent.capabilities import (
     CAPABILITIES,
     LIMITATIONS,
+    limitations,
     menu_commands,
     render_capabilities,
 )
@@ -35,3 +36,12 @@ def test_menu_is_derived_from_registry():
 def test_proactivity_limitations_removed():
     text = " ".join(LIMITATIONS)
     assert "iniciativa propia" not in text and "recordatorios" not in text
+
+
+def test_limitations_adapt_to_tools():
+    assert limitations(False, False) == LIMITATIONS
+    web_only = " ".join(limitations(True, False))
+    assert "navegar la web" not in web_only and "conexiones MCP" in web_only
+    with_mcp = " ".join(limitations(True, True))
+    assert "Todavía no tienes conexiones MCP" not in with_mcp
+    assert "Solo tienes las conexiones listadas" in with_mcp

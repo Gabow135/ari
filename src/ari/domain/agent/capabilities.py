@@ -2,7 +2,7 @@
 
 Feeds both Ari's own prompt ("Tus capacidades") and Telegram's "/" menu, so a
 feature added here is known to Ari and shown to users at once. When a feature
-lands, add it to CAPABILITIES and drop whatever it resolves from LIMITATIONS.
+lands, add it to CAPABILITIES and drop whatever it resolves from `limitations()`.
 """
 from dataclasses import dataclass
 
@@ -69,15 +69,29 @@ CAPABILITIES: list[Capability] = [
 ]
 
 # What Ari can NOT do yet — so it never promises it, and can propose how to get it.
-LIMITATIONS: list[str] = [
-    ("En la conversación no tienes herramientas: no puedes navegar la web, leer "
-     "archivos ni ejecutar comandos."),
-    ("Todavía no tienes conexiones MCP ni integraciones (correo, calendario, "
-     "bases de datos, APIs externas). Una conexión nueva solo existe cuando tu creador "
-     "la agrega a Ari: autorizar una cuenta en otra app (claude.ai, Google…) NO te da "
-     "acceso. Explica qué habría que agregarte, pero no digas que podrás usarlo "
-     "hasta que esté agregado."),
-]
+_NO_TOOLS = ("En la conversación no tienes herramientas: no puedes navegar la web, leer "
+             "archivos ni ejecutar comandos.")
+_NO_MCP = ("Todavía no tienes conexiones MCP ni integraciones (correo, calendario, "
+           "bases de datos, APIs externas). Una conexión nueva solo existe cuando tu creador "
+           "la agrega a Ari: autorizar una cuenta en otra app (claude.ai, Google…) NO te da "
+           "acceso. Explica qué habría que agregarte, pero no digas que podrás usarlo "
+           "hasta que esté agregado.")
+_ONLY_LISTED = ("Solo tienes las conexiones listadas en «Tus herramientas y conexiones». "
+                "Una conexión nueva solo existe cuando tu creador la agrega a Ari "
+                "(mcp/servers.json); autorizar una cuenta en otra app NO te da acceso.")
+
+
+def limitations(has_web: bool, has_mcp: bool) -> list[str]:
+    """What Ari can NOT do, given the tools of the current conversation."""
+    out = []
+    if not has_web:
+        out.append(_NO_TOOLS)
+    out.append(_ONLY_LISTED if has_mcp else _NO_MCP)
+    return out
+
+
+# Without tools (e.g. memory maintenance, or no tool policy wired).
+LIMITATIONS: list[str] = limitations(False, False)
 
 
 def _visible(is_owner: bool) -> list[Capability]:
@@ -88,11 +102,11 @@ def menu_commands(owner: bool) -> list[tuple[str, str]]:
     return [(c.command, c.menu) for c in _visible(owner) if c.command]
 
 
-def render_capabilities(is_owner: bool) -> str:
+def render_capabilities(is_owner: bool, has_web: bool = False, has_mcp: bool = False) -> str:
     lines = ["## Tus capacidades"]
     for cap in _visible(is_owner):
         head = f"- /{cap.command}: " if cap.command else "- "
         lines.append(head + cap.summary + (f" Uso: {cap.usage}" if cap.usage else ""))
     lines += ["", "## Limitaciones actuales (no las prometas; propone cómo resolverlas)"]
-    lines += [f"- {limit}" for limit in LIMITATIONS]
+    lines += [f"- {limit}" for limit in limitations(has_web, has_mcp)]
     return "\n".join(lines)

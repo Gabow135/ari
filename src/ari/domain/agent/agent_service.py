@@ -1,5 +1,6 @@
 from ari.domain.agent.capabilities import render_capabilities
 from ari.domain.memory.entities import Fact, Recall, Summary
+from ari.domain.tools.toolset import ToolsView
 
 _WITH_OWNER = ("## Con quién hablas\n"
                "Estás hablando con tu creador (dueño de Ari). Tiene acceso a todo.")
@@ -19,10 +20,15 @@ class AgentService:
 
     def build_prompt(self, facts: list[Fact], summary: Summary | None,
                      recalls: list[Recall], soul: str | None = None,
-                     is_owner: bool = False, extra: str | None = None) -> str:
+                     is_owner: bool = False, extra: str | None = None,
+                     tools: ToolsView | None = None) -> str:
         parts = [soul.strip() if soul and soul.strip() else self.SYSTEM_PREAMBLE,
                  _WITH_OWNER if is_owner else _WITH_USER,
-                 render_capabilities(is_owner)]
+                 render_capabilities(is_owner,
+                                     has_web=bool(tools and tools.has_web),
+                                     has_mcp=bool(tools and tools.has_mcp))]
+        if tools:
+            parts.append(tools.text)
         if extra:
             parts.append(extra)
         if facts:
