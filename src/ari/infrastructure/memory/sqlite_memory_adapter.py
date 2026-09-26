@@ -105,6 +105,13 @@ class SqliteMemoryAdapter:
             )
             await self._conn.commit()
 
+    async def delete_fact(self, user_id: str, key: str) -> bool:
+        async with self._write_lock:
+            cur = await self._conn.execute(
+                "DELETE FROM facts WHERE user_id = ? AND key = ?", (user_id, key))
+            await self._conn.commit()
+            return cur.rowcount > 0
+
     async def get_summary(self, user_id: str) -> Summary | None:
         rows = await self._conn.execute_fetchall(
             "SELECT content FROM summaries WHERE user_id = ?", (user_id,)

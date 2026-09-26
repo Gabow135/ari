@@ -68,3 +68,10 @@ async def test_concurrent_writes_no_exception_and_isolation(adapter):
     assert all(m.user_id == "bob" for m in bob_msgs)
     assert len(alice_msgs) == 5
     assert len(bob_msgs) == 5
+
+
+async def test_delete_fact(adapter):
+    await adapter.upsert_fact("u1", "color", "azul")
+    assert await adapter.delete_fact("u1", "color") is True
+    assert await adapter.delete_fact("u1", "color") is False
+    assert await adapter.get_facts("u1") == []

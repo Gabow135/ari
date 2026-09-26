@@ -52,6 +52,9 @@ class FakeMemory:
     async def upsert_fact(self, user_id, key, value):
         self._facts[(user_id, key)] = Fact(user_id, key, value)
 
+    async def delete_fact(self, user_id, key):
+        return self._facts.pop((user_id, key), None) is not None
+
     async def get_summary(self, user_id):
         return self._summaries.get(user_id)
 
