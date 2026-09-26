@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     quiet_hours: str = "22-7"  # local hours "start-end"; empty = none
     heartbeat_minutes: int = 60  # 0 disables the heartbeat
     max_items_per_user: int = 20
+    # Tools / MCP (3A)
+    mcp_config: str = "./mcp/servers.json"
+    chat_timeout_seconds: int = 180
 
     @property
     def owner_id_set(self) -> set[str]:
