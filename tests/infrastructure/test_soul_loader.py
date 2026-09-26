@@ -54,3 +54,18 @@ def test_example_servers_json_is_valid():
         servers = json.load(f)["mcpServers"]
     assert {"google", "mysql"} <= set(servers)
     assert all(s.get("access", "owner") == "owner" for s in servers.values())
+
+
+def test_example_servers_json_pins_package_versions():
+    # Secrets never appear on argv, but the versions installed do: pin them so
+    # a compromised/breaking upstream release can't silently start running.
+    import json
+    import re
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    with open(os.path.join(root, "mcp", "servers.json"), encoding="utf-8") as f:
+        servers = json.load(f)["mcpServers"]
+    mysql_pkg = next(a for a in servers["mysql"]["args"]
+                     if a.startswith("@benborla29/mcp-server-mysql"))
+    assert re.fullmatch(r"@benborla29/mcp-server-mysql@\d+\.\d+\.\d+", mysql_pkg)
+    google_pkg = next(a for a in servers["google"]["args"] if a.startswith("workspace-mcp"))
+    assert re.fullmatch(r"workspace-mcp==\d+\.\d+\.\d+", google_pkg)

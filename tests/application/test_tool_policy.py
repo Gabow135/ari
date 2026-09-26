@@ -4,8 +4,9 @@ from ari.infrastructure.tools.mcp_registry import ServerStatus
 
 
 class FakeRegistry:
-    def __init__(self, owner=(), users=()):
+    def __init__(self, owner=(), users=(), statuses=None):
         self._owner, self._users = owner, users
+        self._statuses = statuses
 
     def servers_for(self, is_owner):
         names = tuple(n for n, _ in (self._owner if is_owner else self._users))
@@ -15,12 +16,14 @@ class FakeRegistry:
         return list(self._owner if is_owner else self._users)
 
     def status(self):
+        if self._statuses is not None:
+            return self._statuses
         return [ServerStatus("google", "Gmail del creador", "owner", True, ""),
                 ServerStatus("mysql", "Base (solo lectura)", "owner", False, "falta ARI_MYSQL_PASS")]
 
 
-def _policy(owner=(), users=()):
-    return ToolPolicy(FakeRegistry(owner, users), is_owner=lambda uid: uid == "42")
+def _policy(owner=(), users=(), statuses=None):
+    return ToolPolicy(FakeRegistry(owner, users, statuses), is_owner=lambda uid: uid == "42")
 
 
 def test_user_without_servers_gets_web_only():
@@ -49,3 +52,24 @@ def test_status_text():
     assert "🔌 google — Gmail del creador (dueño) — ✅ configurado" in text
     assert "🗄️ mysql — Base (solo lectura) (dueño) — ⚠️ falta ARI_MYSQL_PASS" in text
     assert "🌐 web — buscar y leer páginas (todos)" in text
+
+
+def test_status_text_shows_raw_access_when_neither_owner_nor_users():
+    statuses = [ServerStatus("x", "algo raro", "everyone", True, "")]
+    text = _policy(statuses=statuses).status_text()
+    assert "🔌 x — algo raro (everyone) — ✅ configurado" in text
+    assert "(todos)" not in text.split("\n")[0]
+
+
+def test_status_text_uses_forbidden_icon_for_invalid_config_but_warning_for_missing_var():
+    statuses = [
+        ServerStatus("mysql", "Base", "owner", False, "falta ARI_MYSQL_PASS"),
+        ServerStatus("bad-access", "d", "everyone", False, "access inválido: 'everyone'"),
+        ServerStatus("bad name", "d", "owner", False, "nombre inválido: 'bad name'"),
+        ServerStatus("nolauncher", "d", "owner", False, "no se encontró 'foo' en el PATH"),
+    ]
+    text = _policy(statuses=statuses).status_text()
+    assert "⚠️ falta ARI_MYSQL_PASS" in text
+    assert "⛔ access inválido: 'everyone'" in text
+    assert "⛔ nombre inválido: 'bad name'" in text
+    assert "⛔ no se encontró 'foo' en el PATH" in text

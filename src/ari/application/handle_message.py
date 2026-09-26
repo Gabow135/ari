@@ -63,6 +63,10 @@ class HandleMessage:
                 system, history, **({"toolset": toolset} if toolset is not None else {}))
         except LLMTimeoutError:
             log.warning("chat call timed out for %s", incoming.user_id)
+            if not allow_actions:
+                # Scheduled task run: let RunDueItems see this as a failure
+                # (record_failure/pause) instead of silently "succeeding".
+                raise
             return OutgoingMessage(incoming.chat_id, TIMEOUT_REPLY)
         if self._actions is not None:
             # Action blocks become stored items + confirmations; only honored for

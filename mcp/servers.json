@@ -2,7 +2,7 @@
   "mcpServers": {
     "google": {
       "command": "uvx",
-      "args": ["workspace-mcp", "--tools", "gmail", "calendar", "drive"],
+      "args": ["workspace-mcp==1.29.0", "--tools", "gmail", "calendar", "drive"],
       "env": {
         "GOOGLE_OAUTH_CLIENT_ID": "${GOOGLE_OAUTH_CLIENT_ID}",
         "GOOGLE_OAUTH_CLIENT_SECRET": "${GOOGLE_OAUTH_CLIENT_SECRET}"
@@ -12,7 +12,7 @@
     },
     "mysql": {
       "command": "npx",
-      "args": ["-y", "@benborla29/mcp-server-mysql"],
+      "args": ["-y", "@benborla29/mcp-server-mysql@2.0.9"],
       "env": {
         "MYSQL_HOST": "${ARI_MYSQL_HOST}",
         "MYSQL_USER": "${ARI_MYSQL_USER}",

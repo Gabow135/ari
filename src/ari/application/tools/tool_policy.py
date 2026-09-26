@@ -1,11 +1,6 @@
-from ari.domain.tools.toolset import WEB_TOOLS, Toolset, ToolsView
+from ari.domain.tools.toolset import WEB_TOOLS, Toolset, ToolsView, server_icon
 
 TOOL_SEARCH = "ToolSearch"  # the CLI loads MCP tools lazily; they need ToolSearch
-_DB_HINTS = ("mysql", "sql", "db", "postgres", "maria")
-
-
-def server_icon(name: str) -> str:
-    return "🗄️" if any(h in name.lower() for h in _DB_HINTS) else "🔌"
 
 
 class ToolPolicy:
@@ -31,8 +26,18 @@ class ToolPolicy:
     def status_text(self) -> str:
         lines = []
         for s in self._registry.status():
-            who = "dueño" if s.access == "owner" else "todos"
-            state = "✅ configurado" if s.ok else f"⚠️ {s.detail}"
+            if s.access == "owner":
+                who = "dueño"
+            elif s.access == "users":
+                who = "todos"
+            else:
+                who = s.access  # unexpected value: show it as-is, never hide it
+            if s.ok:
+                state = "✅ configurado"
+            elif s.detail.startswith("falta "):
+                state = f"⚠️ {s.detail}"  # a missing env var: fixable without editing servers.json
+            else:
+                state = f"⛔ {s.detail}"  # invalid access/name or missing launcher
             lines.append(f"{server_icon(s.name)} {s.name} — {s.description} ({who}) — {state}")
         lines.append("🌐 web — buscar y leer páginas (todos)")
         return "\n".join(lines)

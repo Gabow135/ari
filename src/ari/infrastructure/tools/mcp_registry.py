@@ -15,6 +15,7 @@ log = logging.getLogger("ari.mcp")
 OWNER, USERS = "owner", "users"
 _ARI_FIELDS = ("access", "description")
 _VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ class McpRegistry:
         self._meta: dict[str, tuple[str, str]] = {}  # name -> (access, description)
         self._status: list[ServerStatus] = []
         self._paths: dict[bool, str | None] = {True: None, False: None}
+        self._write_ok: dict[bool, bool] = {True: True, False: True}
 
     # ---- public API -------------------------------------------------------
 
@@ -70,28 +72,36 @@ class McpRegistry:
 
     # ---- internals --------------------------------------------------------
 
-    def _names(self, is_owner: bool) -> tuple[str, ...]:
+    def _candidate_names(self, is_owner: bool) -> tuple[str, ...]:
         return tuple(n for n in self._resolved
                      if is_owner or self._meta[n][0] == USERS)
+
+    def _names(self, is_owner: bool) -> tuple[str, ...]:
+        if not self._write_ok[is_owner]:
+            return ()
+        return self._candidate_names(is_owner)
 
     def _refresh(self) -> None:
         stamps = (_stamp(self._config_path), _stamp(self._env_file))
         if stamps == self._stamps:
             return
-        self._stamps = stamps
         if stamps[0] is None:
             self._raw = None
         else:
             try:
                 with open(self._config_path, encoding="utf-8") as f:
                     raw = json.load(f)
-                if not isinstance(raw.get("mcpServers"), dict):
+                if not isinstance(raw, dict) or not isinstance(raw.get("mcpServers"), dict):
                     raise ValueError("falta el objeto 'mcpServers'")
                 self._raw = raw
             except (OSError, ValueError) as exc:  # JSONDecodeError is a ValueError
                 log.error("invalid %s (%s); keeping the last valid config",
                           self._config_path, exc)
-        self._rebuild()
+        # Only advance the stamps once the whole rebuild (including writing the
+        # per-role files) succeeded; otherwise the next call retries from
+        # scratch instead of getting stuck on a transient write failure.
+        if self._rebuild():
+            self._stamps = stamps
 
     def _lookup(self, name: str) -> str | None:
         value = self._environ.get(name)
@@ -130,7 +140,7 @@ class McpRegistry:
                     "args": ["/c", command, *server.get("args", [])]}
         return server
 
-    def _rebuild(self) -> None:
+    def _rebuild(self) -> bool:
         self._resolved, self._meta, self._status = {}, {}, []
         servers = (self._raw or {}).get("mcpServers", {})
         for name, spec in servers.items():
@@ -138,7 +148,9 @@ class McpRegistry:
             access = spec.get("access", OWNER)
             description = str(spec.get("description", ""))
             detail = ""
-            if access not in (OWNER, USERS):
+            if not _NAME.match(name) or "__" in name:
+                detail = f"nombre inválido: {name!r}"
+            elif access not in (OWNER, USERS):
                 detail = f"access inválido: {access!r}"
             else:
                 try:
@@ -149,8 +161,10 @@ class McpRegistry:
                     cli = self._launcher(cli)
                 except _Missing as exc:
                     detail = f"falta {exc.var}"
-                except FileNotFoundError as exc:
-                    detail = f"no se encontró '{exc.args[0]}' en el PATH"
+                except FileNotFoundError:
+                    # Show the RAW (unresolved) command, never a resolved ${VAR}
+                    # value, so a secret substituted into it never leaks here.
+                    detail = f"no se encontró '{spec.get('command')}' en el PATH"
             if detail:
                 log.warning("MCP server %r disabled: %s", name, detail)
             else:
@@ -158,19 +172,44 @@ class McpRegistry:
                 self._meta[name] = (access, description)
             self._status.append(ServerStatus(name, description, str(access),
                                              not detail, detail))
+        ok = True
         for is_owner, file_name in ((True, "owner.json"), (False, "users.json")):
-            self._paths[is_owner] = self._write(file_name, self._names(is_owner))
+            path, wrote_ok = self._write(file_name, self._candidate_names(is_owner))
+            self._paths[is_owner] = path
+            self._write_ok[is_owner] = wrote_ok
+            ok = ok and wrote_ok
+        return ok
 
-    def _write(self, file_name: str, names: tuple[str, ...]) -> str | None:
-        if not names:
-            return None
-        os.makedirs(self._out_dir, exist_ok=True)
+    def _write(self, file_name: str, names: tuple[str, ...]) -> tuple[str | None, bool]:
         path = os.path.join(self._out_dir, file_name)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"mcpServers": {n: self._resolved[n] for n in names}}, f,
-                      ensure_ascii=False, indent=2)
+        if not names:
+            # A role that lost all its servers (revoked access, rotated secret
+            # gone missing, server removed) must never leave a stale config
+            # with old secrets lying around.
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                log.error("could not remove stale %s: %s", path, exc)
+                return None, False
+            return None, True
+        tmp = path + ".tmp"
         try:
-            os.chmod(path, 0o600)  # holds secrets; best effort on Windows
-        except OSError:
-            pass
-        return path
+            os.makedirs(self._out_dir, exist_ok=True)
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump({"mcpServers": {n: self._resolved[n] for n in names}}, f,
+                              ensure_ascii=False, indent=2)
+                os.replace(tmp, path)
+            except BaseException:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                raise
+        except OSError as exc:
+            log.error("could not write %s: %s", path, exc)
+            return None, False
+        return path, True

@@ -1,6 +1,11 @@
 from dataclasses import dataclass
 
 WEB_TOOLS = ("WebSearch", "WebFetch")
+_DB_HINTS = ("mysql", "sql", "db", "postgres", "maria")
+
+
+def server_icon(name: str) -> str:
+    return "🗄️" if any(h in name.lower() for h in _DB_HINTS) else "🔌"
 
 
 @dataclass(frozen=True)

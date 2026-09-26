@@ -142,3 +142,14 @@ async def test_timeout_gives_a_reply_instead_of_silence():
                               agent=AgentService())(IncomingMessage("u1", "c1", "hola"))
     assert out.text == TIMEOUT_REPLY
     assert "Me tardé demasiado" in TIMEOUT_REPLY
+
+
+async def test_timeout_reraises_for_scheduled_tasks_so_they_count_as_failures():
+    class SlowLLM(FakeLLM):
+        async def complete(self, system, messages, max_tokens=1024, toolset=None):
+            raise LLMTimeoutError("claude timed out after 180s")
+
+    handler = HandleMessage(memory=FakeMemory(), llm=SlowLLM(), embeddings=FakeEmbeddings(),
+                            agent=AgentService())
+    with pytest.raises(LLMTimeoutError):
+        await handler(IncomingMessage("u1", "c1", "hola"), allow_actions=False)

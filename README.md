@@ -130,12 +130,30 @@ disabled. `access: "users"` opens a server to approved users. Check the state wi
 
 Setup, once:
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) (provides `uvx`).
+   Ari only checks for launchers (`uvx`, `npx`, …) when it re-reads
+   `mcp/servers.json`, so after installing one, touch the file (e.g. `echo. >>
+   mcp/servers.json` or just save it) or send `/restart` — otherwise it keeps
+   using the "no se encontró" result from before you installed it.
 2. Google: in Google Cloud create an OAuth client of type *Desktop*, enable the
    Gmail, Calendar and Drive APIs, and set `GOOGLE_OAUTH_CLIENT_ID` /
    `GOOGLE_OAUTH_CLIENT_SECRET` in `.env`. Run `uvx workspace-mcp` once in a
    terminal to authorize your account (tokens are stored locally).
 3. MySQL: create a user with `SELECT` only and set `ARI_MYSQL_HOST`,
    `ARI_MYSQL_USER`, `ARI_MYSQL_PASS`, `ARI_MYSQL_DB` in `.env`.
+
+`mcp/servers.json` pins each MCP server's package version (`pkg@X.Y.Z` for npm,
+`pkg==X.Y.Z` for uvx/PyPI) so an upstream release can't silently start running
+without review. To bump one, look up the new version yourself — don't guess —
+with `npm view <package> version` (npm packages) or `pip index versions
+<package>` / the PyPI JSON API (`https://pypi.org/pypi/<package>/json`, field
+`info.version`) for `uvx`/PyPI packages, then edit the pin in
+`mcp/servers.json` and touch the file (see above) or `/restart`.
+
+On Windows, `.cmd`/`.bat` launchers (`npx`, `uvx`) run through `cmd /c`, and
+`cmd.exe` interprets characters like `&`, `|`, `%` in **arguments**. Keep
+secrets in a server's `env` block, never in `args` — `env` values are passed
+through the environment, not the command line, so this doesn't apply to them
+and they're never exposed on argv either way.
 
 Content read through tools is treated as data, never as instructions (see
 `soul/SOUL.md`). Google write tools are enabled for the owner.

@@ -1,6 +1,8 @@
 import json
 import os
 
+import pytest
+
 from ari.infrastructure.tools.mcp_registry import McpRegistry
 
 CONFIG = {
@@ -129,3 +131,110 @@ def test_descriptions(tmp_path):
     reg, _, _ = _registry(tmp_path)
     assert reg.descriptions(is_owner=False) == [("docs", "Documentación")]
     assert ("google", "Gmail del creador") in reg.descriptions(is_owner=True)
+
+
+# ---- I1: stale role files never linger --------------------------------
+
+def test_stale_role_file_deleted_when_role_loses_all_servers(tmp_path):
+    cfg = {"mcpServers": {"users_srv": {"command": "npx", "env": {"S": "${SEC}"},
+                                        "access": "users", "description": "d"}}}
+    reg, cfg_path, _ = _registry(tmp_path, config=cfg, environ={"SEC": "s3cret"})
+    _, users_path = reg.servers_for(is_owner=False)
+    assert users_path is not None and os.path.exists(users_path)
+    cfg["mcpServers"]["users_srv"]["access"] = "owner"
+    cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
+    assert reg.servers_for(is_owner=False) == ((), None)
+    assert not os.path.exists(users_path)
+
+
+def test_deleting_servers_json_removes_both_role_files(tmp_path):
+    reg, cfg_path, _ = _registry(tmp_path)
+    _, owner_path = reg.servers_for(is_owner=True)
+    _, users_path = reg.servers_for(is_owner=False)
+    assert os.path.exists(owner_path) and os.path.exists(users_path)
+    cfg_path.unlink()
+    assert reg.servers_for(is_owner=True) == ((), None)
+    assert not os.path.exists(owner_path)
+    assert not os.path.exists(users_path)
+
+
+# ---- I2: atomic write, restrictive permissions from creation -----------
+
+def test_write_is_atomic_with_no_leftover_temp_files(tmp_path):
+    reg, _, _ = _registry(tmp_path)
+    _, path = reg.servers_for(is_owner=True)
+    content = _load(path)
+    assert content["google"]["env"]["GOOGLE_OAUTH_CLIENT_ID"] == "gid-1"
+    out_dir = tmp_path / "out"
+    leftovers = [p for p in os.listdir(out_dir) if p not in ("owner.json", "users.json")]
+    assert leftovers == []
+    if os.name != "nt":
+        mode = os.stat(path).st_mode & 0o777
+        assert mode == 0o600
+
+
+# ---- M1: valid JSON that isn't an object is treated as invalid --------
+
+@pytest.mark.parametrize("bad", ["[]", "null", '"just a string"'])
+def test_valid_json_non_object_keeps_last_valid_config(tmp_path, bad):
+    reg, cfg, _ = _registry(tmp_path)
+    assert reg.servers_for(True)[0]
+    cfg.write_text(bad, encoding="utf-8")
+    assert set(reg.servers_for(True)[0]) == {"google", "mysql", "docs"}
+
+
+# ---- M2: OSError while writing is contained ----------------------------
+
+def test_unwritable_out_dir_falls_back_to_web_only_and_does_not_raise(tmp_path):
+    out_path = tmp_path / "out"
+    out_path.write_text("not a directory", encoding="utf-8")
+    cfg = tmp_path / "servers.json"
+    cfg.write_text(json.dumps(CONFIG), encoding="utf-8")
+    env_file = tmp_path / ".env"
+    env_file.write_text("", encoding="utf-8")
+    reg = McpRegistry(str(cfg), str(env_file), str(out_path),
+                      environ=dict(ENV), which=_which)
+    assert reg.servers_for(is_owner=True) == ((), None)
+    assert reg.servers_for(is_owner=False) == ((), None)
+
+
+def test_unwritable_out_dir_retries_once_fixed(tmp_path):
+    out_path = tmp_path / "out"
+    out_path.write_text("not a directory", encoding="utf-8")
+    cfg = tmp_path / "servers.json"
+    cfg.write_text(json.dumps(CONFIG), encoding="utf-8")
+    env_file = tmp_path / ".env"
+    env_file.write_text("", encoding="utf-8")
+    reg = McpRegistry(str(cfg), str(env_file), str(out_path),
+                      environ=dict(ENV), which=_which)
+    assert reg.servers_for(is_owner=True) == ((), None)  # stamps not advanced
+    out_path.unlink()
+    names, path = reg.servers_for(is_owner=True)
+    assert set(names) == {"google", "mysql", "docs"}
+    assert path is not None
+
+
+# ---- M3: server name validation -----------------------------------------
+
+@pytest.mark.parametrize("bad_name", ["bad name", "bad;name", "a__b", "name$"])
+def test_invalid_server_name_is_disabled(tmp_path, bad_name):
+    cfg = {"mcpServers": {bad_name: {"command": "npx"}}}
+    reg, _, _ = _registry(tmp_path, config=cfg)
+    assert reg.servers_for(True) == ((), None)
+    assert reg.status()[0].detail == f"nombre inválido: {bad_name!r}"
+
+
+def test_valid_server_names_are_not_flagged(tmp_path):
+    cfg = {"mcpServers": {"good-name_1": {"command": "npx"}}}
+    reg, _, _ = _registry(tmp_path, config=cfg)
+    assert reg.servers_for(True)[0] == ("good-name_1",)
+
+
+# ---- M6: missing-launcher detail never leaks a resolved secret ---------
+
+def test_missing_launcher_detail_shows_raw_unresolved_command(tmp_path):
+    cfg = {"mcpServers": {"x": {"command": "${CMD}"}}}
+    reg, _, _ = _registry(tmp_path, config=cfg, environ={"CMD": "totally-fake-cmd"},
+                          which=lambda n: None)
+    assert reg.servers_for(True) == ((), None)
+    assert reg.status()[0].detail == "no se encontró '${CMD}' en el PATH"

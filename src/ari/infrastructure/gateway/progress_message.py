@@ -4,6 +4,7 @@ import re
 import time
 
 from ari.domain.ports.progress_port import TEXT, THINKING, TOOL, ProgressEvent, current_progress
+from ari.domain.tools.toolset import server_icon
 
 log = logging.getLogger("ari.telegram")
 
@@ -39,8 +40,7 @@ def _step(event: ProgressEvent) -> str | None:
         return None
     if event.name.startswith("mcp__"):
         _, server, tool = (event.name.split("__", 2) + ["", ""])[:3]
-        icon = "🗄️" if any(h in server.lower() for h in ("mysql", "sql", "db", "postgres", "maria")) else "🔌"
-        return f"{icon} {server} · {tool}".rstrip(" ·")
+        return f"{server_icon(server)} {server} · {tool}".rstrip(" ·")
     label = _TOOL_LABELS.get(event.name)
     if label is None:
         return f"🔧 {event.name}"
