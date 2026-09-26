@@ -148,12 +148,21 @@ class McpRegistry:
                     "args": ["/c", command, *server.get("args", [])]}
         return server
 
-    def _exposed_arg(self, cli: dict) -> str | None:
-        for arg in cli.get("args", []):
-            if isinstance(arg, str):
-                exposed = unsafe_fs_root(arg, self._sensitive)
-                if exposed is not None:
-                    return exposed
+    def _exposed_in_cli(self, value) -> str | None:
+        """Recursively walk all string leaves of the resolved CLI dict and return
+        the first sensitive path that any string leaf would expose, or None."""
+        if isinstance(value, str):
+            return unsafe_fs_root(value, self._sensitive)
+        if isinstance(value, list):
+            for item in value:
+                found = self._exposed_in_cli(item)
+                if found is not None:
+                    return found
+        if isinstance(value, dict):
+            for v in value.values():
+                found = self._exposed_in_cli(v)
+                if found is not None:
+                    return found
         return None
 
     def _rebuild(self) -> bool:
@@ -175,7 +184,7 @@ class McpRegistry:
                     cli = {k: self._subst(v) for k, v in spec.items()
                            if k not in _ARI_FIELDS}
                     if spec.get("guarded"):
-                        exposed = self._exposed_arg(cli)
+                        exposed = self._exposed_in_cli(cli)
                         if exposed is not None:
                             detail = f"root inseguro: expone {exposed}"
                     if not detail:

@@ -310,6 +310,48 @@ def test_guarded_server_enabled_for_safe_root(tmp_path):
     assert "guarded" not in servers["filesystem"]  # Ari-only field stripped
 
 
+def test_guarded_server_disabled_when_root_exposed_via_env_value(tmp_path):
+    """A guarded server whose sensitive path appears in an env dict value is disabled."""
+    cfg = {"mcpServers": {"filesystem": {
+        "command": "npx",
+        "args": ["-y", "server-filesystem", "/safe/work"],
+        "env": {"FS_ROOT": "${ARI_FS_ROOT}"},
+        "guarded": True, "access": "owner", "description": "Archivos"}}}
+    root = str(tmp_path)  # root via env value, not args
+    sensitive = (str(tmp_path / ".env"),)
+    cfgp = tmp_path / "servers.json"
+    cfgp.write_text(json.dumps(cfg), encoding="utf-8")
+    envp = tmp_path / ".env"
+    envp.write_text("", encoding="utf-8")
+    reg = McpRegistry(str(cfgp), str(envp), str(tmp_path / "out"),
+                      environ={"ARI_FS_ROOT": root}, which=_which,
+                      sensitive_paths=sensitive)
+    assert reg.servers_for(True) == ((), None)
+    assert reg.status()[0].detail == f"root inseguro: expone {tmp_path / '.env'}"
+
+
+def test_guarded_server_disabled_when_root_exposed_via_command(tmp_path):
+    """A guarded server whose command string is itself a sensitive path is disabled."""
+    sensitive_cmd = str(tmp_path / "secret-bin")
+    # Make the command 'found' so _launcher doesn't error first
+    cfg = {"mcpServers": {"guarded-cmd": {
+        "command": "${SECRET_CMD}",
+        "args": [],
+        "guarded": True, "access": "owner", "description": "test"}}}
+    cfgp = tmp_path / "servers.json"
+    cfgp.write_text(json.dumps(cfg), encoding="utf-8")
+    envp = tmp_path / ".env"
+    envp.write_text("", encoding="utf-8")
+    # Sensitive path is the command itself; the command IS the sensitive path parent
+    sensitive = (str(tmp_path / "secret-bin" / "key"),)
+    reg = McpRegistry(str(cfgp), str(envp), str(tmp_path / "out"),
+                      environ={"SECRET_CMD": sensitive_cmd},
+                      which=lambda n: n,  # always found
+                      sensitive_paths=sensitive)
+    assert reg.servers_for(True) == ((), None)
+    assert reg.status()[0].detail == f"root inseguro: expone {tmp_path / 'secret-bin' / 'key'}"
+
+
 def test_guarded_server_not_offered_to_users(tmp_path):
     work = tmp_path / "work"
     work.mkdir()

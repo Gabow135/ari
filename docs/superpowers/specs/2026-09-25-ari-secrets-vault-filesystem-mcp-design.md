@@ -158,7 +158,7 @@ nest the Ari checkout (e.g. `~/AriFiles`), not a parent of it.
 | `ARI_VAULT_PATH` | `~/.ari/vault.enc` | Encrypted vault file location |
 | `ARI_FS_ROOT` | — (unset → filesystem server off) | Work directory the filesystem MCP may access |
 
-`Settings` gains `vault_key`, `vault_path`, `fs_mcp_root` (all `ARI_`-prefixed, from `.env`).
+`Settings` gains `vault_key` and `vault_path` (both `ARI_`-prefixed, from `.env`). `ARI_FS_ROOT` is read as a raw env var by the registry (via `${ARI_FS_ROOT}`) and is NOT a `Settings` field.
 
 ## 8. Architecture (new/changed)
 
@@ -171,7 +171,7 @@ ari/vault_cli.py         python3 -m ari.vault  (init/set/list/delete, getpass)
 infrastructure/tools/
   mcp_registry.py        _lookup: vault -> env -> .env; FS-root safety guard
 mcp/servers.json         + "filesystem" owner server
-config/settings.py       + vault_key, vault_path, fs_mcp_root
+config/settings.py       + vault_key, vault_path  (ARI_FS_ROOT is raw env, not a Settings field)
 main.py                  build FernetVault, inject into McpRegistry
 ```
 

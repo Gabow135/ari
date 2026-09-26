@@ -98,7 +98,7 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     vault = FernetVault(settings.vault_path, settings.vault_key)
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     sensitive = (project_root, settings.vault_path,
-                 os.path.join(project_root, ".env"), settings.claude_config_dir)
+                 os.path.join(project_root, ".env"), os.path.abspath(settings.claude_config_dir))
     registry = McpRegistry(settings.mcp_config, ".env",
                            os.path.join(settings.claude_config_dir, "mcp"),
                            vault=vault, sensitive_paths=sensitive)
