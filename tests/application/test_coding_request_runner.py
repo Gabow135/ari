@@ -269,3 +269,17 @@ async def test_cancelled_while_planning_marks_request_failed_and_reraises(reques
         await task
     assert await requests.status_of(rid) == FAILED
     assert not pending.is_planning("42")
+
+
+async def test_stale_notice_truncates_long_instruction(requests):
+    long = "x" * 500
+    await requests.add("42", "42", long, None)
+    sent = []
+
+    async def send(chat_id, text):
+        sent.append(text)
+
+    runner = CodingRequestRunner(requests, None, PendingStore(), send, lambda c: None,
+                                 lambda: datetime.now(timezone.utc) + timedelta(hours=2))
+    await runner()
+    assert len(sent[0]) < 200 and sent[0].endswith("…")

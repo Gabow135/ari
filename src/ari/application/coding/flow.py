@@ -52,7 +52,11 @@ async def route_message(text: str, user_id: str, deps: CodingDeps) -> str | None
         instruction_text, target = cmd
         if deps.pending_store.is_busy(user_id):
             return "Ya tengo un trabajo en curso para ti; espera a que termine."
-        if deps.pending_store.is_planning(user_id):
+        # Claim the planning slot so a background proposal can't plan alongside.
+        if not deps.pending_store.mark_planning(user_id):
             return BUSY.format(truncate(instruction_text))
-        return await deps.request_coding(user_id, instruction_text, target)
+        try:
+            return await deps.request_coding(user_id, instruction_text, target)
+        finally:
+            deps.pending_store.clear_planning(user_id)
     return await deps.chat(text, user_id)

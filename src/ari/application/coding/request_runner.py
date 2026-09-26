@@ -28,7 +28,7 @@ class CodingRequestRunner:
         for req in await self._requests.claim_pending():
             if self._clock() - req.created_at > self._max_age:
                 await self._requests.finish(req.id, SKIPPED, "stale")
-                await self._send(req.chat_id, STALE.format(req.instruction))
+                await self._send(req.chat_id, STALE.format(truncate(req.instruction)))
                 continue
             already_busy = (self._pending.is_busy(req.user_id)
                             or self._pending.get(req.user_id) is not None)

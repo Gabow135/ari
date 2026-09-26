@@ -149,3 +149,18 @@ async def test_code_refused_while_a_proposed_plan_is_being_prepared(tmp_path):
     deps.pending_store.mark_planning("42")
     reply = await route_message("/code add X", "42", deps)
     assert "No preparé" in reply and "add X" in reply
+
+
+async def test_code_holds_planning_slot_while_it_plans(tmp_path):
+    deps = _deps(tmp_path, [])
+    seen = []
+    inner = deps.request_coding
+
+    async def spy(user_id, text, target):
+        seen.append(deps.pending_store.is_planning(user_id))
+        return await inner(user_id, text, target)
+
+    deps.request_coding = spy
+    await route_message("/code add X", "42", deps)
+    assert seen == [True]                                  # proposals see it busy
+    assert not deps.pending_store.is_planning("42")        # released afterwards
