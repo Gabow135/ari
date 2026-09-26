@@ -57,3 +57,22 @@ class FakeMemory:
 
     async def upsert_summary(self, user_id, content):
         self._summaries[user_id] = Summary(user_id, content)
+
+
+class FakeVault:
+    """In-memory SecretVault for registry/policy tests (no crypto, no disk)."""
+
+    def __init__(self, secrets: dict | None = None):
+        self._secrets = dict(secrets or {})
+
+    def get(self, name):
+        return self._secrets.get(name)
+
+    def set(self, name, value):
+        self._secrets[name] = value
+
+    def delete(self, name):
+        self._secrets.pop(name, None)
+
+    def names(self):
+        return sorted(self._secrets)

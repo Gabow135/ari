@@ -44,7 +44,7 @@ def _stamp(path: str) -> tuple[int, int] | None:
 class McpRegistry:
     def __init__(self, config_path: str, env_file: str, out_dir: str, *,
                  environ: Mapping[str, str] | None = None, platform: str = os.name,
-                 which=shutil.which):
+                 which=shutil.which, vault=None):
         self._config_path, self._env_file, self._out_dir = config_path, env_file, out_dir
         self._environ = environ if environ is not None else os.environ
         self._platform, self._which = platform, which
@@ -55,6 +55,7 @@ class McpRegistry:
         self._status: list[ServerStatus] = []
         self._paths: dict[bool, str | None] = {True: None, False: None}
         self._write_ok: dict[bool, bool] = {True: True, False: True}
+        self._vault = vault
 
     # ---- public API -------------------------------------------------------
 
@@ -104,6 +105,10 @@ class McpRegistry:
             self._stamps = stamps
 
     def _lookup(self, name: str) -> str | None:
+        if self._vault is not None:
+            vaulted = self._vault.get(name)
+            if vaulted:
+                return vaulted
         value = self._environ.get(name)
         if value:
             return value
