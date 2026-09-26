@@ -9,8 +9,9 @@ from ari.infrastructure.llm.stream_json import STREAM_ARGS, run_streaming
 log = logging.getLogger("ari.claude_code_coder")
 
 # /code must not pick up the host's claude.ai connectors or a target repo's
-# .mcp.json, nor user-level hooks/plugins; the target project's own CLAUDE.md
-# and settings still apply (they help write good code there).
+# .mcp.json, nor user-level hooks/plugins/settings; the target project's own
+# CLAUDE.md and project settings (.claude/settings.json) still apply (they
+# help write good code there), but .claude/settings.local.json does not.
 _CODER_ISOLATION = ["--strict-mcp-config", "--setting-sources", "project"]
 
 

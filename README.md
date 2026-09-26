@@ -127,7 +127,8 @@ Scheduled tasks and the heartbeat only get read-only tools. Every change is conf
 by a code-generated receipt appended to Ari's reply; messages to other users are
 signed. Proposing code only prepares the usual `/code` plan; nothing changes until
 the owner replies `dale`. `/code` runs with `--strict-mcp-config --setting-sources
-project`.
+project`: the target repo's project settings (`.claude/settings.json`) and CLAUDE.md
+still apply, but `.claude/settings.local.json` and user-level settings don't.
 
 ## Tools and connections (MCP)
 

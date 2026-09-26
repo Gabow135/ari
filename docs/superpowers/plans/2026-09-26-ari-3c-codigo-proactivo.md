@@ -17,7 +17,7 @@
 - Proposing only plans (existing `RequestCoding`: plan permission mode); execution only on the owner's «dale» through the existing flow.
 - `instruccion` 1–2000 chars; `carpeta` optional ≤ 500 chars; folder validated by the bot's `Workspace` (allowed root), never by the server.
 - Receipt: `🛠️ Preparando plan: <instrucción>` (instruction truncated to 120 chars, ending in `…` when truncated).
-- User-facing Spanish: neutral, **tuteo** (`tests/test_tone.py`). Exact texts: `Descarté una propuesta de código vieja: <instrucción>`, `Ya tengo un trabajo o plan de código pendiente; respóndelo primero.`, `No pude preparar el plan: <motivo>`.
+- User-facing Spanish: neutral, **tuteo** (`tests/test_tone.py`). Exact texts: `Descarté una propuesta de código vieja: <instrucción>`, `No preparé «<instrucción>»: ya tengo un trabajo o plan de código pendiente; respóndelo primero.` (also used by `/code` when a background plan is being prepared), `No pude preparar el plan: <motivo>`, `Se interrumpió la preparación del plan: <instrucción>`.
 - Stale threshold: 1 hour. Claim must be a single guarded `UPDATE … RETURNING` (cross-process safe, same pattern as `claim_due`).
 - `/code` planner and executor add `--strict-mcp-config` and `--setting-sources project`.
 - Run tests with `.venv/Scripts/python.exe -m pytest …` (Windows) / `.venv/bin/python -m pytest …`; written below as `python -m pytest`.

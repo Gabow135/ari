@@ -26,7 +26,7 @@ heartbeat) can generate plans.
 | Trigger | **A:** tool `proponer_codigo` writes a `coding_requests` row; the bot runs the existing `RequestCoding` after the turn | Reuses the tested `/code` flow; path validation stays in the bot. B (server runs `claude` itself) and C (parse `/code` from text) rejected |
 | Who | Owner, chat context only | Code changes are owner-only already |
 | Execution | Unchanged: plan only; execution on «dale» | Human in the loop |
-| Isolation | Planner and executor add `--strict-mcp-config`, `--setting-sources project` | No host connectors / project `.mcp.json`; target project's CLAUDE.md still applies |
+| Isolation | Planner and executor add `--strict-mcp-config`, `--setting-sources project` | No host connectors / project `.mcp.json`; target project's CLAUDE.md and project settings (`.claude/settings.json`) still apply, but `.claude/settings.local.json` and user-level settings don't |
 
 ## 3. Tool
 
@@ -62,12 +62,21 @@ Runs from the `after_turn` hook (with the outbox flush) and on every scheduler t
 2. Request older than 1 hour → `skipped`, notify "Descarté una propuesta de código vieja:
    <instrucción>".
 3. If the owner has a coding job running or a plan awaiting «dale» (`PendingStore`) →
-   `skipped`, notify "Ya tengo un trabajo o plan de código pendiente; respóndelo primero."
-4. Otherwise run `RequestCoding(user_id, instruction, target)` **in the background**
-   (anti-GC task set), inside a progress message for the owner's chat; send its reply
-   (the plan + "Responde dale…", or the out-of-root refusal) to the chat; mark `done`,
-   or `failed` with detail and "No pude preparar el plan: <motivo>" on exception.
-5. The owner's «dale»/«no» are handled by the existing `route_message` flow unchanged.
+   `skipped`, notify "No preparé «<instrucción>»: ya tengo un trabajo o plan de código
+   pendiente; respóndelo primero." (instruction truncated to 120 chars). `route_message`'s
+   `/code` branch refuses with the same text when a background plan is being prepared
+   (`PendingStore.is_planning`).
+4. Otherwise run `RequestCoding(user_id, instruction, target, proposed=True)` **in the
+   background** (anti-GC task set), inside a progress message for the owner's chat; send
+   its reply (the plan + "Responde dale…", or the out-of-root refusal) to the chat; mark
+   `done`, or `failed` with detail and "No pude preparar el plan: <motivo>" on exception.
+   `proposed=True` marks the stored `PendingAction` so only an exact «dale» confirms it.
+5. The owner's «no» always cancels. For a proposed plan, only an exact «dale» confirms it;
+   any other affirmative (sí, ok…) falls through to chat, same as an unrelated reply.
+   `/code` plans keep the existing looser affirmative set unchanged.
+6. On startup, before the scheduler starts, `SqliteCodingRequests.reset_taken()` marks any
+   row left `taken` by a crash/restart as `failed` ("interrumpido") and the bot notifies
+   each chat: "Se interrumpió la preparación del plan: <instrucción>".
 
 Planning uses the existing coder timeout (`ARI_CODING_TIMEOUT_SECONDS`).
 
@@ -75,7 +84,8 @@ Planning uses the existing coder timeout (`ARI_CODING_TIMEOUT_SECONDS`).
 
 `ClaudeCodeCoder` plan and exec argv add `--strict-mcp-config` and
 `--setting-sources project` (keeping existing permission modes/allowed tools and
-`cli_env`). Project CLAUDE.md/settings of the target repo still apply.
+`cli_env`). The target repo's project settings (`.claude/settings.json`) and
+CLAUDE.md still apply; `.claude/settings.local.json` and user-level settings do not.
 
 ## 7. Other changes
 
