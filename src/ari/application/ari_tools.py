@@ -4,7 +4,9 @@ domain rules, and records a code-generated receipt for each change."""
 import logging
 from dataclasses import dataclass
 
+from ari.application.access.gate import normalize_code
 from ari.application.schedule.agenda_format import created_receipt, item_line
+from ari.domain.access.entities import APPROVED, PENDING
 from ari.domain.schedule.actions import ActionError, next_cron_run, parse_action
 from ari.domain.schedule.entities import ACTIVE, CANCELLED, PAUSED, REMINDER, RUNNING, TASK
 from ari.domain.tools.ari_permissions import allowed_ari_tools
@@ -13,6 +15,19 @@ log = logging.getLogger("ari.tools")
 
 DENIED = "No permitido en este contexto."
 _KINDS = {"recordatorio": REMINDER, "tarea": TASK}
+
+
+def _who(rec) -> str:
+    return f"@{rec.username} (id {rec.user_id})" if rec.username else f"id {rec.user_id}"
+
+
+def _match(records, arg: str):
+    """Records matching '@username' (case-insensitive) or a numeric id."""
+    target = (arg or "").strip()
+    if target.startswith("@"):
+        name = target[1:].lower()
+        return [r for r in records if (r.username or "").lower() == name]
+    return [r for r in records if r.user_id == target]
 
 
 @dataclass(frozen=True)
@@ -116,3 +131,64 @@ class AriTools:
         if not facts:
             return "No tengo datos guardados de ti."
         return "\n".join(f"- {f.key}: {f.value}" for f in facts)
+
+    # ---- owner administration --------------------------------------------
+
+    async def _resolve(self, arg: str, statuses: set[str]):
+        records = [r for r in await self._access.list_all() if r.status in statuses]
+        found = _match(records, arg)
+        if not found:
+            return None, f"No encontré a {arg or 'ese usuario'}."
+        if len(found) > 1:
+            return None, f"Hay varios usuarios que coinciden con {arg}; usa su id."
+        return found[0], None
+
+    async def _deliver(self, result) -> None:
+        for chat_id, text in result.notifications:
+            await self._log.outbox_add(chat_id, text)
+
+    async def aprobar_acceso(self, codigo_o_usuario: str) -> str:
+        if not self._allowed("aprobar_acceso"):
+            return DENIED
+        arg = (codigo_o_usuario or "").strip()
+        if arg.startswith("@"):
+            rec, error = await self._resolve(arg, {PENDING})
+            if error:
+                return f"No encontré una solicitud pendiente de {arg}."
+            code = rec.code
+        else:
+            code = normalize_code(arg)
+        result = await self._gate.admin_command(f"/aprobar {code}", self._a.user_id)
+        await self._deliver(result)
+        if result.notifications:  # only a real approval notifies the user
+            rec = await self._access.find_by_code(code)
+            await self._receipt(f"✅ Aprobé a {_who(rec)}")
+        return result.reply
+
+    async def revocar_acceso(self, usuario: str) -> str:
+        if not self._allowed("revocar_acceso"):
+            return DENIED
+        rec, error = await self._resolve(usuario, {PENDING, APPROVED})
+        if error:
+            return error
+        result = await self._gate.admin_command(f"/revocar {rec.user_id}", self._a.user_id)
+        await self._receipt(f"⛔ Revoqué a {_who(rec)}")
+        return result.reply
+
+    async def ver_accesos(self) -> str:
+        if not self._allowed("ver_accesos"):
+            return DENIED
+        return (await self._gate.admin_command("/accesos", self._a.user_id)).reply
+
+    async def enviar_mensaje(self, destinatario: str, texto: str) -> str:
+        if not self._allowed("enviar_mensaje"):
+            return DENIED
+        texto = (texto or "").strip()
+        if not texto or len(texto) > 1000:
+            return "No pude enviarlo: el texto debe tener entre 1 y 1000 caracteres."
+        rec, error = await self._resolve(destinatario, {APPROVED})
+        if error:
+            return error
+        await self._log.outbox_add(rec.user_id,
+                                   f"📨 De {self._a.name or 'tu contacto'} (vía Ari): {texto}")
+        return await self._receipt(f"📨 Enviado a {_who(rec)}")
