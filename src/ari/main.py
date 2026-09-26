@@ -17,6 +17,7 @@ from ari.application.coding.confirm_coding import ConfirmCoding
 from ari.application.coding.flow import CodingDeps, route_message
 from ari.application.coding.pending_store import PendingStore
 from ari.application.coding.request_coding import RequestCoding
+from ari.application.coding.request_runner import CodingRequestRunner
 from ari.application.handle_message import HandleMessage
 from ari.application.memory_maintainer import MemoryMaintainer
 from ari.application.outbox import OutboxFlusher
@@ -42,6 +43,7 @@ from ari.infrastructure.llm.claude_code_adapter import ClaudeCodeCliAdapter
 from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import connect
+from ari.infrastructure.persistence.sqlite_coding_requests import SqliteCodingRequests
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 from ari.infrastructure.soul.soul_loader import SoulLoader
@@ -211,7 +213,21 @@ def main() -> None:
             return await _send_checked(app.bot, chat_id, text)
 
         flusher = OutboxFlusher(c.turn_log, send_checked, _utcnow)
-        c.handler._after_turn = flusher  # flush right after every chat/task turn
+
+        def spawn(coro) -> None:
+            task = asyncio.ensure_future(coro)
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+
+        coding_runner = CodingRequestRunner(
+            SqliteCodingRequests(c.conn), request_coding, store, send, spawn, _utcnow,
+            progress=lambda chat_id: ProgressMessage(app.bot, int(chat_id)))
+
+        async def after_turn() -> None:
+            await flusher()
+            await coding_runner()
+
+        c.handler._after_turn = after_turn  # flush + proposed code, right after each turn
 
         notices = SystemNotices(c.schedule_store, access_store, settings.owner_id_set,
                                 send, tz, quiet, _utcnow)
@@ -238,7 +254,7 @@ def main() -> None:
             owners=settings.owner_id_set, send=send, tz=tz, quiet=quiet,
             interval_minutes=settings.heartbeat_minutes, clock=_utcnow, tools=c.tools)
         await c.schedule_store.reset_running()  # items interrupted by a crash/restart
-        scheduler = Scheduler([due, notices.tick, heartbeat, flusher])
+        scheduler = Scheduler([due, notices.tick, heartbeat, flusher, coding_runner])
         scheduler.start()
         app.bot_data["scheduler"] = scheduler
 

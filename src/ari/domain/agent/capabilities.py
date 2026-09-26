@@ -67,6 +67,10 @@ CAPABILITIES: list[Capability] = [
               "«dale», lo ejecutas en un branch nuevo ari/tg-… con commits. Push, PR y "
               "merge quedan para el creador."),
     Capability(
+        owner_only=True,
+        summary="Proponer y preparar cambios de código con proponer_codigo cuando tu "
+                "creador lo pide o acepta tu sugerencia; se ejecutan solo con su «dale»."),
+    Capability(
         command="aprobar", menu="Aprobar acceso: /aprobar CÓDIGO", owner_only=True,
         summary="Aprobar el acceso de un usuario nuevo con su código.",
         usage="/aprobar CÓDIGO"),

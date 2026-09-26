@@ -198,3 +198,20 @@ async def test_default_runner_passes_cli_env(monkeypatch):
     coder = ClaudeCodeCoder(claude_bin="claude", cli_env={"CLAUDE_CONFIG_DIR": "x"})
     await coder.plan(CodingInstruction("u", "do it", None), ".")
     assert captured["env"] == {"CLAUDE_CONFIG_DIR": "x"}
+
+
+async def test_plan_and_exec_argv_are_isolated(monkeypatch):
+    import ari.infrastructure.coder.claude_code_coder as mod
+    seen = []
+
+    async def fake_run_streaming(argv, cwd=None, timeout=None, env=None, **_kw):
+        seen.append(argv)
+        return '{"type": "result", "is_error": false, "result": "ok"}'
+
+    monkeypatch.setattr(mod, "run_streaming", fake_run_streaming)
+    coder = ClaudeCodeCoder(claude_bin="claude")
+    await coder._default_plan_runner("x", ".", "m")
+    await coder._default_exec_runner("x", ".", "m")
+    for argv in seen:
+        assert "--strict-mcp-config" in argv
+        assert argv[argv.index("--setting-sources") + 1] == "project"

@@ -8,6 +8,11 @@ from ari.infrastructure.llm.stream_json import STREAM_ARGS, run_streaming
 
 log = logging.getLogger("ari.claude_code_coder")
 
+# /code must not pick up the host's claude.ai connectors or a target repo's
+# .mcp.json, nor user-level hooks/plugins; the target project's own CLAUDE.md
+# and settings still apply (they help write good code there).
+_CODER_ISOLATION = ["--strict-mcp-config", "--setting-sources", "project"]
+
 
 class ClaudeCodeCoder:
     """CoderPort adapter backed by the Claude Code CLI.
@@ -100,7 +105,7 @@ class ClaudeCodeCoder:
             f"{text}\n\nProduce a concise step plan only; do NOT modify files.",
             "--model", model,
             "--permission-mode", "plan",
-            *STREAM_ARGS,
+            *STREAM_ARGS, *_CODER_ISOLATION,
         ]
         return await self._run(argv, cwd=target_dir)
 
@@ -111,7 +116,7 @@ class ClaudeCodeCoder:
             "--model", model,
             "--allowed-tools", "Read", "Edit", "Write", "Bash",
             "--permission-mode", "acceptEdits",
-            *STREAM_ARGS,
+            *STREAM_ARGS, *_CODER_ISOLATION,
         ]
         return await self._run(argv, cwd=target_dir)
 
