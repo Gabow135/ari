@@ -366,3 +366,23 @@ def test_guarded_server_not_offered_to_users(tmp_path):
                       environ={"ARI_FS_ROOT": str(work)}, which=_which,
                       sensitive_paths=())
     assert reg.servers_for(is_owner=False) == ((), None)
+
+
+def test_registry_reresolves_when_vault_file_changes(tmp_path):
+    from cryptography.fernet import Fernet
+
+    from ari.infrastructure.vault.fernet_vault import FernetVault
+
+    cfg = {"mcpServers": {"google": {"command": "uvx", "args": ["m"],
+                                     "env": {"GID": "${GID}"},
+                                     "access": "owner", "description": "g"}}}
+    cfgp = tmp_path / "servers.json"
+    cfgp.write_text(json.dumps(cfg), encoding="utf-8")
+    envp = tmp_path / ".env"
+    envp.write_text("", encoding="utf-8")
+    vault = FernetVault(str(tmp_path / "vault.enc"), Fernet.generate_key().decode())
+    reg = McpRegistry(str(cfgp), str(envp), str(tmp_path / "out"),
+                      environ={}, which=_which, vault=vault)
+    assert reg.servers_for(is_owner=True) == ((), None)   # GID missing everywhere
+    vault.set("GID", "gid-1")                              # changes the vault file
+    assert "google" in reg.servers_for(is_owner=True)[0]  # picked up, no restart

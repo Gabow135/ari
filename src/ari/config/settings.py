@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # Secrets vault (filesystem MCP root ARI_FS_ROOT is read raw by the registry)
     vault_key: str = ""
     vault_path: str = "~/.ari/vault.enc"
+    # Vault web maintainer (LAN HTTPS link to load secrets)
+    vault_web_port: int = 8765
+    vault_web_ttl_minutes: int = 10
+    vault_web_bind: str = "0.0.0.0"
 
     @property
     def owner_id_set(self) -> set[str]:
