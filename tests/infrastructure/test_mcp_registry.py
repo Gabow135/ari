@@ -269,3 +269,58 @@ def test_missing_everywhere_disables_server(tmp_path):
     reg, _, _ = _registry(tmp_path, environ=env, vault=FakeVault({}))
     status = {s.name: s for s in reg.status()}
     assert not status["mysql"].ok and status["mysql"].detail == "falta DBPASS"
+
+
+def test_guarded_server_disabled_when_root_exposes_sensitive(tmp_path):
+    cfg = {"mcpServers": {"filesystem": {
+        "command": "npx",
+        "args": ["-y", "server-filesystem", "${ARI_FS_ROOT}"],
+        "guarded": True, "access": "owner", "description": "Archivos"}}}
+    # root == the sensitive .env's parent (contains it)
+    root = str(tmp_path)
+    sensitive = (str(tmp_path / ".env"),)
+    cfgp = tmp_path / "servers.json"
+    cfgp.write_text(json.dumps(cfg), encoding="utf-8")
+    envp = tmp_path / ".env"
+    envp.write_text("", encoding="utf-8")
+    reg = McpRegistry(str(cfgp), str(envp), str(tmp_path / "out"),
+                      environ={"ARI_FS_ROOT": root}, which=_which,
+                      sensitive_paths=sensitive)
+    assert reg.servers_for(True) == ((), None)
+    assert reg.status()[0].detail == f"root inseguro: expone {tmp_path / '.env'}"
+
+
+def test_guarded_server_enabled_for_safe_root(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    cfg = {"mcpServers": {"filesystem": {
+        "command": "npx",
+        "args": ["-y", "server-filesystem", "${ARI_FS_ROOT}"],
+        "guarded": True, "access": "owner", "description": "Archivos"}}}
+    cfgp = tmp_path / "servers.json"
+    cfgp.write_text(json.dumps(cfg), encoding="utf-8")
+    envp = tmp_path / ".env"
+    envp.write_text("", encoding="utf-8")
+    reg = McpRegistry(str(cfgp), str(envp), str(tmp_path / "out"),
+                      environ={"ARI_FS_ROOT": str(work)}, which=_which,
+                      sensitive_paths=(str(tmp_path / ".ari" / "vault.enc"),))
+    names, path = reg.servers_for(True)
+    assert names == ("filesystem",)
+    servers = _load(path)
+    assert "guarded" not in servers["filesystem"]  # Ari-only field stripped
+
+
+def test_guarded_server_not_offered_to_users(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    cfg = {"mcpServers": {"filesystem": {
+        "command": "npx", "args": ["-y", "sf", "${ARI_FS_ROOT}"],
+        "guarded": True, "access": "owner", "description": "Archivos"}}}
+    cfgp = tmp_path / "servers.json"
+    cfgp.write_text(json.dumps(cfg), encoding="utf-8")
+    envp = tmp_path / ".env"
+    envp.write_text("", encoding="utf-8")
+    reg = McpRegistry(str(cfgp), str(envp), str(tmp_path / "out"),
+                      environ={"ARI_FS_ROOT": str(work)}, which=_which,
+                      sensitive_paths=())
+    assert reg.servers_for(is_owner=False) == ((), None)

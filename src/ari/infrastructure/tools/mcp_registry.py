@@ -10,10 +10,12 @@ from dataclasses import dataclass
 
 from dotenv import dotenv_values
 
+from ari.domain.tools.fs_guard import unsafe_fs_root
+
 log = logging.getLogger("ari.mcp")
 
 OWNER, USERS = "owner", "users"
-_ARI_FIELDS = ("access", "description")
+_ARI_FIELDS = ("access", "description", "guarded")
 _VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -44,7 +46,7 @@ def _stamp(path: str) -> tuple[int, int] | None:
 class McpRegistry:
     def __init__(self, config_path: str, env_file: str, out_dir: str, *,
                  environ: Mapping[str, str] | None = None, platform: str = os.name,
-                 which=shutil.which, vault=None):
+                 which=shutil.which, vault=None, sensitive_paths=()):
         self._config_path, self._env_file, self._out_dir = config_path, env_file, out_dir
         self._environ = environ if environ is not None else os.environ
         self._platform, self._which = platform, which
@@ -56,6 +58,7 @@ class McpRegistry:
         self._paths: dict[bool, str | None] = {True: None, False: None}
         self._write_ok: dict[bool, bool] = {True: True, False: True}
         self._vault = vault
+        self._sensitive = tuple(sensitive_paths)
 
     # ---- public API -------------------------------------------------------
 
@@ -145,6 +148,14 @@ class McpRegistry:
                     "args": ["/c", command, *server.get("args", [])]}
         return server
 
+    def _exposed_arg(self, cli: dict) -> str | None:
+        for arg in cli.get("args", []):
+            if isinstance(arg, str):
+                exposed = unsafe_fs_root(arg, self._sensitive)
+                if exposed is not None:
+                    return exposed
+        return None
+
     def _rebuild(self) -> bool:
         self._resolved, self._meta, self._status = {}, {}, []
         servers = (self._raw or {}).get("mcpServers", {})
@@ -163,7 +174,12 @@ class McpRegistry:
                     # env, url, headers, type…) goes to the CLI with ${VAR} resolved.
                     cli = {k: self._subst(v) for k, v in spec.items()
                            if k not in _ARI_FIELDS}
-                    cli = self._launcher(cli)
+                    if spec.get("guarded"):
+                        exposed = self._exposed_arg(cli)
+                        if exposed is not None:
+                            detail = f"root inseguro: expone {exposed}"
+                    if not detail:
+                        cli = self._launcher(cli)
                 except _Missing as exc:
                     detail = f"falta {exc.var}"
                 except FileNotFoundError:
