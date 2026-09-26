@@ -40,6 +40,12 @@ CREATE INDEX IF NOT EXISTS idx_receipts_turn ON receipts(turn_id);
 CREATE TABLE IF NOT EXISTS outbox (
   id INTEGER PRIMARY KEY, chat_id TEXT NOT NULL, text TEXT NOT NULL,
   attempts INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, sent_at TEXT);
+
+CREATE TABLE IF NOT EXISTS coding_requests (
+  id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, chat_id TEXT NOT NULL,
+  instruction TEXT NOT NULL, target TEXT, status TEXT NOT NULL,
+  created_at TEXT NOT NULL, detail TEXT);
+CREATE INDEX IF NOT EXISTS idx_coding_requests_status ON coding_requests(status, id);
 """
 
 
