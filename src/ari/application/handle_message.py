@@ -3,12 +3,14 @@ import logging
 from datetime import datetime, timezone
 
 from ari.application.schedule.schedule_actions import extract_actions
+from ari.application.tools.tool_policy import no_turn
 from ari.domain.agent.agent_service import AgentService
 from ari.domain.agent.message import Message
 from ari.domain.memory.memory_port import MemoryPort
 from ari.domain.ports.embeddings_port import EmbeddingsPort
 from ari.domain.ports.gateway_port import IncomingMessage, OutgoingMessage
 from ari.domain.ports.llm_port import LLMPort, LLMTimeoutError
+from ari.domain.tools.ari_permissions import CHAT, TASK
 
 log = logging.getLogger("ari.handle_message")
 BLANK_REPLY = "Mándame un mensaje de texto y con gusto te ayudo."
@@ -21,7 +23,7 @@ class HandleMessage:
                  embeddings: EmbeddingsPort, agent: AgentService,
                  working_memory_size: int = 20, recall_top_k: int = 5,
                  maintainer=None, scheduler=None, soul=None, is_owner=None,
-                 actions=None, tools=None):
+                 actions=None, tools=None, turn_log=None, after_turn=None):
         self._memory = memory
         self._llm = llm
         self._embeddings = embeddings
@@ -34,6 +36,8 @@ class HandleMessage:
         self._is_owner = is_owner or (lambda _uid: False)
         self._actions = actions  # ScheduleActions | None
         self._tools = tools  # ToolPolicy | None
+        self._turn_log = turn_log  # SqliteTurnLog | None
+        self._after_turn = after_turn  # async () -> None, e.g. OutboxFlusher
 
     async def __call__(self, incoming: IncomingMessage,
                        allow_actions: bool = True) -> OutgoingMessage:
@@ -52,24 +56,36 @@ class HandleMessage:
 
         extra = (await self._safe(self._actions.context(incoming.user_id), None)
                  if self._actions else None)
-        toolset = self._tools.for_user(incoming.user_id) if self._tools else None
-        view = self._tools.view(incoming.user_id) if self._tools else None
-        system = self._agent.build_prompt(
-            facts, summary, recalls, soul=self._soul(),
-            is_owner=self._is_owner(incoming.user_id), extra=extra, tools=view)
+
+        context = CHAT if allow_actions else TASK
+        turn_cm = (self._tools.turn(incoming.user_id, context, incoming.display_name,
+                                    incoming.chat_id) if self._tools else no_turn())
+        timed_out = False
         try:
-            # Pass the toolset only when there is one: LLMs without tool support
-            # (and older fakes) keep their original signature.
-            reply = await self._llm.complete(
-                system, history, **({"toolset": toolset} if toolset is not None else {}))
-        except LLMTimeoutError:
-            log.warning("chat call timed out for %s", incoming.user_id)
-            if not allow_actions:
-                # Scheduled task run: let RunDueItems see this as a failure
-                # (record_failure/pause) instead of silently "succeeding".
-                raise
-            return OutgoingMessage(incoming.chat_id, TIMEOUT_REPLY)
-        reply, _legacy = extract_actions(reply)  # stray legacy blocks never reach the user
+            async with turn_cm as turn:
+                system = self._agent.build_prompt(
+                    facts, summary, recalls, soul=self._soul(),
+                    is_owner=self._is_owner(incoming.user_id), extra=extra,
+                    tools=turn.view if turn else None)
+                try:
+                    reply = await self._llm.complete(
+                        system, history,
+                        **({"toolset": turn.toolset} if turn is not None else {}))
+                except LLMTimeoutError:
+                    log.warning("chat call timed out for %s", incoming.user_id)
+                    if not allow_actions:
+                        # Scheduled task run: let RunDueItems count it as a failure.
+                        raise
+                    reply, timed_out = TIMEOUT_REPLY, True
+            reply, _legacy = extract_actions(reply)  # stray legacy blocks stay hidden
+            receipts = await self._receipts(turn)
+            if receipts:
+                reply = "\n\n".join(p for p in (reply, "\n".join(receipts)) if p)
+            if timed_out:
+                return OutgoingMessage(incoming.chat_id, reply)
+        finally:
+            if self._after_turn is not None:
+                await self._safe(self._after_turn(), None)
 
         await self._memory.append_message(
             Message(incoming.user_id, "assistant", reply, datetime.now(timezone.utc)))
@@ -80,6 +96,11 @@ class HandleMessage:
             self._schedule(self._maintainer.maybe_summarize(incoming.user_id))
 
         return OutgoingMessage(incoming.chat_id, reply)
+
+    async def _receipts(self, turn) -> list[str]:
+        if turn is None or self._turn_log is None:
+            return []
+        return await self._safe(self._turn_log.receipts(turn.turn_id), [])
 
     async def _retrieve(self, user_id, text):
         try:

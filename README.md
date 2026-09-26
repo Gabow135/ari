@@ -119,6 +119,13 @@ claude.ai connectors, hooks, plugins and skills never leak into its replies.
   are queued until morning. Your own reminders still arrive on time.
 - Everything is stored in SQLite and survives `/restart` and outages.
 
+Ari's own actions are tools of its internal MCP server (`python -m ari.mcp_server`,
+started by the Claude CLI per turn): `agendar`, `listar_agenda`, `cancelar`,
+`recordar_dato`, `olvidar_dato`, `ver_datos` for everyone, plus `aprobar_acceso`,
+`revocar_acceso`, `ver_accesos`, `enviar_mensaje` for the owner. Scheduled tasks and
+the heartbeat only get read-only tools. Every change is confirmed by a code-generated
+receipt appended to Ari's reply; messages to other users are signed.
+
 ## Tools and connections (MCP)
 
 Everyone approved can get answers researched on the **web**. The owner also gets

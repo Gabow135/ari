@@ -32,8 +32,21 @@ CAPABILITIES: list[Capability] = [
         command="recordatorios", menu="Ver tus recordatorios y tareas",
         summary="Recordatorios y tareas programadas pedidas en lenguaje natural "
                 "(«recuérdame mañana a las 9…», «cada lunes a las 8 resúmeme…»), "
-                "puntuales o recurrentes; se cancelan pidiéndolo.",
+                "puntuales o recurrentes, con tus herramientas agendar, listar_agenda "
+                "y cancelar.",
         usage="/recordatorios lista los activos con su #número."),
+    Capability(
+        summary="Memoria explícita: guardas, corriges y borras datos del usuario cuando te "
+                "lo pide («recuerda que…», «olvida…», «¿qué sabes de mí?») con "
+                "recordar_dato, olvidar_dato y ver_datos."),
+    Capability(
+        owner_only=True,
+        summary="Administrar accesos conversando («aprueba a @juan», «revoca a @pedro», "
+                "«¿quién pidió acceso?») con aprobar_acceso, revocar_acceso y ver_accesos."),
+    Capability(
+        owner_only=True,
+        summary="Enviar mensajes a usuarios aprobados («avísale a @juan que…») con "
+                "enviar_mensaje; llegan firmados con el nombre de tu creador."),
     Capability(
         owner_only=True,
         summary="Latido cada hora (fuera del horario de silencio 22–07): revisas por tu "

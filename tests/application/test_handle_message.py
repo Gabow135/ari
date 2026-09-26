@@ -83,12 +83,29 @@ from ari.domain.ports.llm_port import LLMTimeoutError
 from ari.domain.tools.toolset import Toolset, ToolsView
 
 
-class _FakePolicy:
-    def for_user(self, user_id):
-        return Toolset(("WebSearch",), ("WebSearch",), f"/cfg/{user_id}.json")
+from contextlib import asynccontextmanager
 
-    def view(self, user_id):
-        return ToolsView(f"## Tus herramientas y conexiones\n- 🌐 web ({user_id})", True, False)
+from ari.domain.tools.toolset import Turn
+
+
+class _FakePolicy:
+    def __init__(self):
+        self.turns = []
+
+    @asynccontextmanager
+    async def turn(self, user_id, context="chat", actor_name="", chat_id=None):
+        self.turns.append((user_id, context, actor_name, chat_id))
+        yield Turn(Toolset(("WebSearch",), ("WebSearch",), f"/cfg/{user_id}.json"),
+                   ToolsView(f"## Tus herramientas y conexiones\n- 🌐 web ({user_id})",
+                             True, False), f"turn-{user_id}")
+
+
+class _FakeTurnLog:
+    def __init__(self, receipts):
+        self._r = receipts
+
+    async def receipts(self, turn_id):
+        return self._r.get(turn_id, [])
 
 
 class _RecordingMaintainer:
@@ -105,16 +122,61 @@ class _RecordingMaintainer:
 async def test_chat_uses_sender_toolset_and_view_but_maintenance_gets_none():
     llm = FakeLLM(reply="hola")
     ran = []
+    policy = _FakePolicy()
     handler = HandleMessage(memory=FakeMemory(), llm=llm, embeddings=FakeEmbeddings(),
-                            agent=AgentService(), tools=_FakePolicy(),
+                            agent=AgentService(), tools=policy,
                             maintainer=_RecordingMaintainer(llm),
                             scheduler=lambda coro: ran.append(coro))
-    await handler(IncomingMessage("u9", "c9", "busca algo"))
+    await handler(IncomingMessage("u9", "c9", "busca algo", display_name="Ana"))
     for coro in ran:
         await coro
+    assert policy.turns == [("u9", "chat", "Ana", "c9")]
     assert llm.toolsets[0].mcp_config_path == "/cfg/u9.json"
     assert "🌐 web (u9)" in llm.calls[0][0]
-    assert llm.toolsets[1:] == [None]  # fact extraction: no tools
+    assert llm.toolsets[1:] == [None]
+
+
+async def test_receipts_appended_and_after_turn_called():
+    flushed = []
+
+    async def after_turn():
+        flushed.append(True)
+
+    handler = HandleMessage(memory=FakeMemory(), llm=FakeLLM(reply="Listo."),
+                            embeddings=FakeEmbeddings(), agent=AgentService(),
+                            tools=_FakePolicy(),
+                            turn_log=_FakeTurnLog({"turn-u1": ["✅ Recordatorio #1: x — sáb 26/09 09:00"]}),
+                            after_turn=after_turn)
+    out = await handler(IncomingMessage("u1", "c1", "recuérdame x"))
+    assert out.text == "Listo.\n\n✅ Recordatorio #1: x — sáb 26/09 09:00"
+    assert flushed == [True]
+
+
+async def test_timeout_after_a_tool_ran_still_shows_receipt_and_flushes():
+    class SlowLLM(FakeLLM):
+        async def complete(self, system, messages, max_tokens=1024, toolset=None):
+            raise LLMTimeoutError("claude timed out after 180s")
+
+    flushed = []
+
+    async def after_turn():
+        flushed.append(True)
+
+    from ari.application.handle_message import TIMEOUT_REPLY
+    out = await HandleMessage(memory=FakeMemory(), llm=SlowLLM(), embeddings=FakeEmbeddings(),
+                              agent=AgentService(), tools=_FakePolicy(),
+                              turn_log=_FakeTurnLog({"turn-u1": ["🧠 Guardé: a = b"]}),
+                              after_turn=after_turn)(IncomingMessage("u1", "c1", "hola"))
+    assert out.text == f"{TIMEOUT_REPLY}\n\n🧠 Guardé: a = b"
+    assert flushed == [True]
+
+
+async def test_scheduled_run_uses_task_context():
+    policy = _FakePolicy()
+    await HandleMessage(memory=FakeMemory(), llm=FakeLLM(reply="ok"), embeddings=FakeEmbeddings(),
+                        agent=AgentService(), tools=policy)(
+        IncomingMessage("u1", "c1", "resumen"), allow_actions=False)
+    assert policy.turns[0][1] == "task"
 
 
 async def test_timeout_gives_a_reply_instead_of_silence():

@@ -227,3 +227,21 @@ async def test_conexiones_is_owner_only(wired):
     assert owner_replies == ["🌐 web — buscar y leer páginas (todos)"]
     await cb(_update(7, "/conexiones", user_replies), None)
     assert "código" in user_replies[0].lower() or "solo para el dueño" in user_replies[0]
+
+
+async def test_send_checked_reports_success_and_failure():
+    class Ok:
+        def __init__(self):
+            self.parts = []
+
+        async def send_message(self, chat_id, text):
+            self.parts.append(text)
+
+    class Broken:
+        async def send_message(self, chat_id, text):
+            raise RuntimeError("Forbidden")
+
+    ok = Ok()
+    assert await main_mod._send_checked(ok, "7", "x" * 5000) is True
+    assert [len(p) for p in ok.parts] == [4096, 904]
+    assert await main_mod._send_checked(Broken(), "7", "hola") is False

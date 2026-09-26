@@ -3,9 +3,11 @@ import logging
 from datetime import datetime, timedelta
 
 from ari.application.schedule.schedule_actions import extract_actions
+from ari.application.tools.tool_policy import no_turn
 from ari.domain.agent.message import Message
 from ari.domain.schedule.quiet_hours import is_quiet
 from ari.domain.schedule.timefmt import fmt_long, fmt_short
+from ari.domain.tools.ari_permissions import HEARTBEAT
 
 log = logging.getLogger("ari.heartbeat")
 
@@ -55,16 +57,17 @@ class Heartbeat:
             return
         recent_key = f"heartbeat.recent:{owner}"
         recent = json.loads(await self._store.kv_get(recent_key) or "[]")
-        view = self._tools.view(owner) if self._tools else None
-        toolset = self._tools.for_user(owner) if self._tools else None
-        system = self._agent.build_prompt(
-            await self._memory.get_facts(owner), await self._memory.get_summary(owner), [],
-            soul=self._soul(), is_owner=True, extra=await self._section(owner, now, recent),
-            tools=view)
-        history = await self._memory.recent_messages(owner, 10)
-        raw = await self._llm.complete(
-            system, [*history, Message(owner, "user", _INSTRUCTION, now)],
-            **({"toolset": toolset} if toolset is not None else {}))
+        turn_cm = (self._tools.turn(owner, HEARTBEAT, "", owner) if self._tools
+                   else no_turn())
+        async with turn_cm as turn:
+            system = self._agent.build_prompt(
+                await self._memory.get_facts(owner), await self._memory.get_summary(owner), [],
+                soul=self._soul(), is_owner=True, extra=await self._section(owner, now, recent),
+                tools=turn.view if turn else None)
+            history = await self._memory.recent_messages(owner, 10)
+            raw = await self._llm.complete(
+                system, [*history, Message(owner, "user", _INSTRUCTION, now)],
+                **({"toolset": turn.toolset} if turn is not None else {}))
         reply, _ignored = extract_actions(raw)  # heartbeat may suggest, never schedule
         if not reply or reply.strip().strip(".!¡ ").upper() == NADA:
             return

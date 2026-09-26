@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import logging
 import os
+import sys
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -18,13 +19,14 @@ from ari.application.coding.pending_store import PendingStore
 from ari.application.coding.request_coding import RequestCoding
 from ari.application.handle_message import HandleMessage
 from ari.application.memory_maintainer import MemoryMaintainer
+from ari.application.outbox import OutboxFlusher
 from ari.application.schedule.heartbeat import Heartbeat
 from ari.application.schedule.llm_health import MonitoredLLM
 from ari.application.schedule.run_due_items import RunDueItems
 from ari.application.schedule.schedule_actions import ScheduleActions
 from ari.application.schedule.scheduler import Scheduler
 from ari.application.schedule.system_notices import SystemNotices
-from ari.application.tools.tool_policy import ToolPolicy
+from ari.application.tools.tool_policy import AriServerSpec, ToolPolicy
 from ari.config.settings import Settings
 from ari.domain.agent.agent_service import AgentService
 from ari.domain.ports.gateway_port import IncomingMessage
@@ -40,9 +42,11 @@ from ari.infrastructure.llm.claude_code_adapter import ClaudeCodeCliAdapter
 from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import connect
+from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 from ari.infrastructure.soul.soul_loader import SoulLoader
 from ari.infrastructure.tools.mcp_registry import McpRegistry
+from ari.infrastructure.tools.turn_config import TurnConfigWriter
 from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
@@ -56,15 +60,20 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-async def _send_quietly(bot, chat_id: str, text: str) -> None:
-    """Background sends (reminders, notices, heartbeat): split to Telegram's
-    limit and never raise — a failed send must not break the scheduler."""
+async def _send_checked(bot, chat_id: str, text: str) -> bool:
+    """Send split to Telegram's limit; True if every part went out. Never raises."""
     for part in TelegramAdapter.split_text(text):
         try:
             await bot.send_message(chat_id=int(chat_id), text=part)
         except Exception as exc:  # noqa: BLE001
             logging.warning("could not send to %s: %s", chat_id, exc)
-            return
+            return False
+    return True
+
+
+async def _send_quietly(bot, chat_id: str, text: str) -> None:
+    """Background sends (reminders, notices, heartbeat): best effort, never raise."""
+    await _send_checked(bot, chat_id, text)
 
 
 @dataclasses.dataclass
@@ -78,6 +87,7 @@ class Components:
     agent: AgentService
     soul: SoulLoader
     tools: ToolPolicy
+    turn_log: SqliteTurnLog
 
 
 def cli_env(settings: Settings) -> dict | None:
@@ -96,7 +106,15 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     memory = SqliteMemoryAdapter(conn, embedding_dim=dim)
     registry = McpRegistry(settings.mcp_config, ".env",
                            os.path.join(settings.claude_config_dir, "mcp"))
-    tools = ToolPolicy(registry, Authorizer(settings.owner_id_set).is_owner)
+    turn_log = SqliteTurnLog(conn)
+    ari_spec = AriServerSpec(sys.executable, ("-m", "ari.mcp_server"), {
+        "ARI_DB_PATH": os.path.abspath(settings.db_path),
+        "ARI_TIMEZONE": settings.timezone,
+        "ARI_MAX_ITEMS": str(settings.max_items_per_user),
+        "ARI_OWNER_IDS": ",".join(sorted(settings.owner_id_set)),
+    })
+    tools = ToolPolicy(registry, Authorizer(settings.owner_id_set).is_owner, ari=ari_spec,
+                       writer=TurnConfigWriter(os.path.join(settings.claude_config_dir, "mcp")))
     llm = MonitoredLLM(ClaudeCodeCliAdapter(model=settings.model,
                                             claude_bin=settings.claude_bin, cli_env=env,
                                             timeout=settings.chat_timeout_seconds))
@@ -112,8 +130,10 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         is_owner=Authorizer(settings.owner_id_set).is_owner,
         actions=actions,
         tools=tools,
+        turn_log=turn_log,
     )
-    return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul, tools)
+    return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul, tools,
+                      turn_log)
 
 
 def main() -> None:
@@ -180,6 +200,12 @@ def main() -> None:
         async def send(chat_id: str, text: str) -> None:
             await _send_quietly(app.bot, chat_id, text)
 
+        async def send_checked(chat_id: str, text: str) -> bool:
+            return await _send_checked(app.bot, chat_id, text)
+
+        flusher = OutboxFlusher(c.turn_log, send_checked, _utcnow)
+        c.handler._after_turn = flusher  # flush right after every chat/task turn
+
         notices = SystemNotices(c.schedule_store, access_store, settings.owner_id_set,
                                 send, tz, quiet, _utcnow)
         c.llm.listener = notices
@@ -197,7 +223,7 @@ def main() -> None:
             owners=settings.owner_id_set, send=send, tz=tz, quiet=quiet,
             interval_minutes=settings.heartbeat_minutes, clock=_utcnow, tools=c.tools)
         await c.schedule_store.reset_running()  # items interrupted by a crash/restart
-        scheduler = Scheduler([due, notices.tick, heartbeat])
+        scheduler = Scheduler([due, notices.tick, heartbeat, flusher])
         scheduler.start()
         app.bot_data["scheduler"] = scheduler
 
@@ -273,7 +299,8 @@ def main() -> None:
                 return ""
             # Build a fresh IncomingMessage reflecting the actual text for this call.
             scoped_inc = IncomingMessage(
-                user_id=inc.user_id, chat_id=inc.chat_id, text=chat_text)
+                user_id=inc.user_id, chat_id=inc.chat_id, text=chat_text,
+                display_name=inc.display_name)
             out = await message_handler(scoped_inc)
             return out.text
 

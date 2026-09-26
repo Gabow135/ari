@@ -108,31 +108,38 @@ async def test_action_blocks_in_heartbeat_are_ignored(store):
     assert sent == [("42", "💡 Ojo")]
 
 
-from ari.domain.tools.toolset import Toolset, ToolsView
+from contextlib import asynccontextmanager
+
+from ari.domain.tools.toolset import Toolset, ToolsView, Turn
 
 
 class _OwnerPolicy:
-    def for_user(self, user_id):
-        return Toolset(("WebSearch",), ("WebSearch", "mcp__google"), "/cfg/owner.json")
+    def __init__(self):
+        self.contexts = []
 
-    def view(self, user_id):
-        return ToolsView("## Tus herramientas y conexiones\n- 🔌 google: Gmail", True, True)
+    @asynccontextmanager
+    async def turn(self, user_id, context="chat", actor_name="", chat_id=None):
+        self.contexts.append(context)
+        yield Turn(Toolset(("WebSearch",), ("WebSearch", "mcp__google"), "/cfg/owner.json"),
+                   ToolsView("## Tus herramientas y conexiones\n- 🔌 google: Gmail", True, True),
+                   "turn-hb")
 
 
-async def test_heartbeat_uses_owner_toolset(store):
+async def test_heartbeat_uses_owner_turn_in_heartbeat_context(store):
     clock = Clock(DAY)
     sent = []
 
     async def send(chat_id, text):
         sent.append((chat_id, text))
 
-    llm, mem = FakeLLM(reply="NADA"), FakeMemory()
+    llm, mem, policy = FakeLLM(reply="NADA"), FakeMemory(), _OwnerPolicy()
     hb = Heartbeat(llm=llm, memory=mem, store=store, agent=AgentService(),
                    soul=lambda: "Soy Ari", checklist=lambda: "- revisa correos",
                    owners={"42"}, send=send, tz=TZ, quiet=(22, 7), interval_minutes=60,
-                   clock=clock, tools=_OwnerPolicy())
+                   clock=clock, tools=policy)
     await hb()
     clock.now += timedelta(hours=1)
     await hb()
-    assert llm.toolsets == [_OwnerPolicy().for_user("42")]
+    assert policy.contexts == ["heartbeat"]
+    assert llm.toolsets[0].mcp_config_path == "/cfg/owner.json"
     assert "🔌 google: Gmail" in llm.calls[0][0]
