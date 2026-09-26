@@ -106,3 +106,33 @@ async def test_action_blocks_in_heartbeat_are_ignored(store):
     clock.now += timedelta(hours=1)
     await hb()
     assert sent == [("42", "💡 Ojo")]
+
+
+from ari.domain.tools.toolset import Toolset, ToolsView
+
+
+class _OwnerPolicy:
+    def for_user(self, user_id):
+        return Toolset(("WebSearch",), ("WebSearch", "mcp__google"), "/cfg/owner.json")
+
+    def view(self, user_id):
+        return ToolsView("## Tus herramientas y conexiones\n- 🔌 google: Gmail", True, True)
+
+
+async def test_heartbeat_uses_owner_toolset(store):
+    clock = Clock(DAY)
+    sent = []
+
+    async def send(chat_id, text):
+        sent.append((chat_id, text))
+
+    llm, mem = FakeLLM(reply="NADA"), FakeMemory()
+    hb = Heartbeat(llm=llm, memory=mem, store=store, agent=AgentService(),
+                   soul=lambda: "Soy Ari", checklist=lambda: "- revisa correos",
+                   owners={"42"}, send=send, tz=TZ, quiet=(22, 7), interval_minutes=60,
+                   clock=clock, tools=_OwnerPolicy())
+    await hb()
+    clock.now += timedelta(hours=1)
+    await hb()
+    assert llm.toolsets == [_OwnerPolicy().for_user("42")]
+    assert "🔌 google: Gmail" in llm.calls[0][0]

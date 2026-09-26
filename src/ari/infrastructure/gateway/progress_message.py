@@ -37,6 +37,10 @@ def _step(event: ProgressEvent) -> str | None:
         return "🤔 Pensando…"
     if event.name in _HIDDEN_TOOLS:
         return None
+    if event.name.startswith("mcp__"):
+        _, server, tool = (event.name.split("__", 2) + ["", ""])[:3]
+        icon = "🗄️" if any(h in server.lower() for h in ("mysql", "sql", "db", "postgres", "maria")) else "🔌"
+        return f"{icon} {server} · {tool}".rstrip(" ·")
     label = _TOOL_LABELS.get(event.name)
     if label is None:
         return f"🔧 {event.name}"

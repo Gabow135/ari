@@ -92,3 +92,53 @@ async def test_actions_context_in_prompt_and_reply_processed():
     assert (await mem.recent_messages("u1", 10))[-1].content == "hecho ✅"
     await handler(IncomingMessage("u1", "c1", "tarea"), allow_actions=False)
     assert acts.applied == [("u1", "c1", True), ("u1", "c1", False)]
+
+
+from ari.domain.ports.llm_port import LLMTimeoutError
+from ari.domain.tools.toolset import Toolset, ToolsView
+
+
+class _FakePolicy:
+    def for_user(self, user_id):
+        return Toolset(("WebSearch",), ("WebSearch",), f"/cfg/{user_id}.json")
+
+    def view(self, user_id):
+        return ToolsView(f"## Tus herramientas y conexiones\n- 🌐 web ({user_id})", True, False)
+
+
+class _RecordingMaintainer:
+    def __init__(self, llm):
+        self._llm = llm
+
+    async def extract_facts(self, user_id, text):
+        await self._llm.complete("facts", [])
+
+    async def maybe_summarize(self, user_id):
+        return None
+
+
+async def test_chat_uses_sender_toolset_and_view_but_maintenance_gets_none():
+    llm = FakeLLM(reply="hola")
+    ran = []
+    handler = HandleMessage(memory=FakeMemory(), llm=llm, embeddings=FakeEmbeddings(),
+                            agent=AgentService(), tools=_FakePolicy(),
+                            maintainer=_RecordingMaintainer(llm),
+                            scheduler=lambda coro: ran.append(coro))
+    await handler(IncomingMessage("u9", "c9", "busca algo"))
+    for coro in ran:
+        await coro
+    assert llm.toolsets[0].mcp_config_path == "/cfg/u9.json"
+    assert "🌐 web (u9)" in llm.calls[0][0]
+    assert llm.toolsets[1:] == [None]  # fact extraction: no tools
+
+
+async def test_timeout_gives_a_reply_instead_of_silence():
+    class SlowLLM(FakeLLM):
+        async def complete(self, system, messages, max_tokens=1024, toolset=None):
+            raise LLMTimeoutError("claude timed out after 180s")
+
+    from ari.application.handle_message import TIMEOUT_REPLY
+    out = await HandleMessage(memory=FakeMemory(), llm=SlowLLM(), embeddings=FakeEmbeddings(),
+                              agent=AgentService())(IncomingMessage("u1", "c1", "hola"))
+    assert out.text == TIMEOUT_REPLY
+    assert "Me tardé demasiado" in TIMEOUT_REPLY

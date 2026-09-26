@@ -21,12 +21,13 @@ class Heartbeat:
     decides whether it has something worth saying; ``NADA`` means stay silent."""
 
     def __init__(self, *, llm, memory, store, agent, soul, checklist, owners, send,
-                 tz, quiet, interval_minutes: int, clock, daily_max: int = 3):
+                 tz, quiet, interval_minutes: int, clock, daily_max: int = 3, tools=None):
         self._llm, self._memory, self._store, self._agent = llm, memory, store, agent
         self._soul, self._checklist, self._owners = soul, checklist, sorted(owners)
         self._send, self._tz, self._quiet, self._clock = send, tz, quiet, clock
         self._interval = timedelta(minutes=interval_minutes)
         self._daily_max = daily_max
+        self._tools = tools  # ToolPolicy | None
 
     async def __call__(self) -> None:
         if self._interval <= timedelta(0) or not self._owners:
@@ -54,11 +55,16 @@ class Heartbeat:
             return
         recent_key = f"heartbeat.recent:{owner}"
         recent = json.loads(await self._store.kv_get(recent_key) or "[]")
+        view = self._tools.view(owner) if self._tools else None
+        toolset = self._tools.for_user(owner) if self._tools else None
         system = self._agent.build_prompt(
             await self._memory.get_facts(owner), await self._memory.get_summary(owner), [],
-            soul=self._soul(), is_owner=True, extra=await self._section(owner, now, recent))
+            soul=self._soul(), is_owner=True, extra=await self._section(owner, now, recent),
+            tools=view)
         history = await self._memory.recent_messages(owner, 10)
-        raw = await self._llm.complete(system, [*history, Message(owner, "user", _INSTRUCTION, now)])
+        raw = await self._llm.complete(
+            system, [*history, Message(owner, "user", _INSTRUCTION, now)],
+            **({"toolset": toolset} if toolset is not None else {}))
         reply, _ignored = extract_actions(raw)  # heartbeat may suggest, never schedule
         if not reply or reply.strip().strip(".!¡ ").upper() == NADA:
             return

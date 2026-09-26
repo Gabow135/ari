@@ -132,3 +132,14 @@ async def test_internal_tools_hidden_and_labels_are_friendly():
     shown = (bot.sent + bot.edits)[-1]
     assert "ToolSearch" not in shown and "long prompt" not in shown
     assert "subagente" in shown and "🔧 Frobnicate" in shown
+
+
+async def test_mcp_tools_get_server_labels():
+    bot = _FakeBot()
+    async with ProgressMessage(bot, 1, min_interval=0.01):
+        emit_progress(ProgressEvent(TOOL, "mcp__google__search_gmail_messages", ""))
+        emit_progress(ProgressEvent(TOOL, "mcp__mysql__query", "SELECT 1"))
+        await _settle()
+    shown = (bot.sent + bot.edits)[-1]
+    assert "🔌 google · search_gmail_messages" in shown
+    assert "🗄️ mysql · query" in shown

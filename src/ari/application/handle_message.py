@@ -7,10 +7,12 @@ from ari.domain.agent.message import Message
 from ari.domain.memory.memory_port import MemoryPort
 from ari.domain.ports.embeddings_port import EmbeddingsPort
 from ari.domain.ports.gateway_port import IncomingMessage, OutgoingMessage
-from ari.domain.ports.llm_port import LLMPort
+from ari.domain.ports.llm_port import LLMPort, LLMTimeoutError
 
 log = logging.getLogger("ari.handle_message")
 BLANK_REPLY = "Mándame un mensaje de texto y con gusto te ayudo."
+TIMEOUT_REPLY = ("Me tardé demasiado con las herramientas; intenta con algo más "
+                 "acotado.")
 
 
 class HandleMessage:
@@ -18,7 +20,7 @@ class HandleMessage:
                  embeddings: EmbeddingsPort, agent: AgentService,
                  working_memory_size: int = 20, recall_top_k: int = 5,
                  maintainer=None, scheduler=None, soul=None, is_owner=None,
-                 actions=None):
+                 actions=None, tools=None):
         self._memory = memory
         self._llm = llm
         self._embeddings = embeddings
@@ -30,6 +32,7 @@ class HandleMessage:
         self._soul = soul or (lambda: None)  # () -> SOUL.md text | None
         self._is_owner = is_owner or (lambda _uid: False)
         self._actions = actions  # ScheduleActions | None
+        self._tools = tools  # ToolPolicy | None
 
     async def __call__(self, incoming: IncomingMessage,
                        allow_actions: bool = True) -> OutgoingMessage:
@@ -48,10 +51,19 @@ class HandleMessage:
 
         extra = (await self._safe(self._actions.context(incoming.user_id), None)
                  if self._actions else None)
+        toolset = self._tools.for_user(incoming.user_id) if self._tools else None
+        view = self._tools.view(incoming.user_id) if self._tools else None
         system = self._agent.build_prompt(
             facts, summary, recalls, soul=self._soul(),
-            is_owner=self._is_owner(incoming.user_id), extra=extra)
-        reply = await self._llm.complete(system, history)
+            is_owner=self._is_owner(incoming.user_id), extra=extra, tools=view)
+        try:
+            # Pass the toolset only when there is one: LLMs without tool support
+            # (and older fakes) keep their original signature.
+            reply = await self._llm.complete(
+                system, history, **({"toolset": toolset} if toolset is not None else {}))
+        except LLMTimeoutError:
+            log.warning("chat call timed out for %s", incoming.user_id)
+            return OutgoingMessage(incoming.chat_id, TIMEOUT_REPLY)
         if self._actions is not None:
             # Action blocks become stored items + confirmations; only honored for
             # the user's own messages (allow_actions=False for scheduled runs).
