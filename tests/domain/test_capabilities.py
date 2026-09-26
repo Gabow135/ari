@@ -29,13 +29,24 @@ def test_menu_is_derived_from_registry():
     assert [c for c, _ in menu_commands(owner=False)] == ["start", "recordatorios"]
     owner = [c for c, _ in menu_commands(owner=True)]
     assert set(owner) == {"start", "recordatorios", "code", "aprobar", "revocar",
-                          "accesos", "conexiones", "restart", "stop"}
+                          "accesos", "conexiones", "vault", "restart", "stop"}
     assert owner[0] == "start"
 
 
 def test_proactivity_limitations_removed():
     text = " ".join(LIMITATIONS)
     assert "iniciativa propia" not in text and "recordatorios" not in text
+
+
+def test_vault_command_is_owner_only():
+    owner = dict(menu_commands(owner=True))
+    public = dict(menu_commands(owner=False))
+    assert "vault" in owner and "vault" not in public
+
+
+def test_vault_capability_is_described_to_owner():
+    assert "/vault" in render_capabilities(is_owner=True)
+    assert "/vault" not in render_capabilities(is_owner=False)
 
 
 def test_limitations_adapt_to_tools():

@@ -3,6 +3,7 @@ import dataclasses
 import logging
 import os
 import sys
+import os.path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -51,6 +52,7 @@ from ari.infrastructure.soul.soul_loader import SoulLoader
 from ari.infrastructure.tools.mcp_registry import McpRegistry
 from ari.infrastructure.tools.turn_config import TurnConfigWriter
 from ari.infrastructure.vault.fernet_vault import FernetVault
+from ari.infrastructure.vault_web.maintainer import VaultWebMaintainer
 from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
@@ -94,6 +96,7 @@ class Components:
     tools: ToolPolicy
     turn_log: SqliteTurnLog
     turn_config_writer: TurnConfigWriter
+    vault_web: VaultWebMaintainer
 
 
 def cli_env(settings: Settings) -> dict | None:
@@ -143,8 +146,12 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         tools=tools,
         turn_log=turn_log,
     )
+    cert_dir = os.path.dirname(os.path.expanduser(settings.vault_path))
+    vault_web = VaultWebMaintainer(
+        vault, settings.mcp_config, cert_dir=cert_dir, port=settings.vault_web_port,
+        bind=settings.vault_web_bind, ttl_minutes=settings.vault_web_ttl_minutes)
     return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul, tools,
-                      turn_log, turn_config_writer)
+                      vault_web)
 
 
 def main() -> None:
@@ -162,6 +169,7 @@ def main() -> None:
         app.bot_data["conn"] = c.conn
         app.bot_data["actions"] = c.actions
         app.bot_data["tools"] = c.tools
+        app.bot_data["vault_web"] = c.vault_web
         for line in c.tools.status_text().splitlines():
             logging.info("conexión: %s", line)
         access_store = SqliteAccessStore(c.conn)
@@ -267,8 +275,13 @@ def main() -> None:
         await c.schedule_store.reset_running()  # items interrupted by a crash/restart
         for stranded in await coding_requests.reset_taken():  # plans interrupted likewise
             await send(stranded.chat_id,
-                      f"Se interrumpió la preparación del plan: {truncate(stranded.instruction)}")
-        scheduler = Scheduler([due, notices.tick, heartbeat, flusher, coding_runner])
+                       f"Se interrumpió la preparación del plan: {truncate(stranded.instruction)}")
+
+        async def vault_web_sweep() -> None:
+            c.vault_web.sweep_and_maybe_stop()
+
+        scheduler = Scheduler([due, notices.tick, heartbeat, flusher, coding_runner,
+                               vault_web_sweep])
         scheduler.start()
         app.bot_data["scheduler"] = scheduler
 
@@ -284,6 +297,9 @@ def main() -> None:
                 logging.warning(
                     "timed out after %ss draining in-flight scheduled tasks; "
                     "closing the DB anyway", _DRAIN_TIMEOUT)
+        vw = app.bot_data.get("vault_web")
+        if vw is not None:
+            vw.stop()
         conn = app.bot_data.get("conn")
         if conn is not None:
             await conn.close()
@@ -419,6 +435,21 @@ def main() -> None:
             return
         await _reply_parts(msg, app.bot_data["tools"].status_text())
 
+    async def _on_vault(update, _context) -> None:
+        """/vault (owner only): reply with a one-time HTTPS link to load secrets."""
+        msg = update.effective_message
+        if msg is None or msg.from_user is None:
+            return
+        if not await _admit(msg):
+            return
+        if not app.bot_data["gate"].is_owner(str(msg.from_user.id)):
+            await msg.reply_text("Ese comando es solo para el dueño.")
+            return
+        link = app.bot_data["vault_web"].new_link()
+        await _reply_parts(
+            msg, f"Cargá tus credenciales acá (vence pronto; el navegador va a advertir "
+                 f"por el certificado, aceptá una vez):\n{link}")
+
     async def _on_access_admin(update, _context) -> None:
         """Owner-only /aprobar, /revocar, /accesos."""
         msg = update.effective_message
@@ -439,6 +470,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", _on_start))
     app.add_handler(CommandHandler("recordatorios", _on_reminders))
     app.add_handler(CommandHandler("conexiones", _on_connections))
+    app.add_handler(CommandHandler("vault", _on_vault))
     app.add_handler(CommandHandler(list(ADMIN_COMMANDS), _on_access_admin))
     app.add_handler(CommandHandler(list(LIFECYCLE_COMMANDS), _on_lifecycle))
     app.add_handler(CommandHandler(["code", "fase2"], _on_command))
