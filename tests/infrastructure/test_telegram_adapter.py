@@ -26,3 +26,14 @@ def test_split_text_respects_limit():
     parts = TelegramAdapter.split_text("x" * 9000, limit=4096)
     assert all(len(p) <= 4096 for p in parts)
     assert "".join(parts) == "x" * 9000
+
+
+def test_to_incoming_carries_display_name():
+    from types import SimpleNamespace
+    from ari.infrastructure.gateway.telegram_adapter import TelegramAdapter
+    msg = SimpleNamespace(text="hola", chat_id=5,
+                          from_user=SimpleNamespace(id=7, first_name="Juan", username="juanp"))
+    inc = TelegramAdapter.to_incoming(SimpleNamespace(effective_message=msg))
+    assert inc.display_name == "Juan"
+    msg.from_user.first_name = None
+    assert TelegramAdapter.to_incoming(SimpleNamespace(effective_message=msg)).display_name == "juanp"

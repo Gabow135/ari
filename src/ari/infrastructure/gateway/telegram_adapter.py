@@ -16,8 +16,10 @@ class TelegramAdapter:
         msg = getattr(update, "effective_message", None) or getattr(update, "message", None)
         if msg is None or not getattr(msg, "text", None):
             return None
+        user = msg.from_user
         return IncomingMessage(
-            user_id=str(msg.from_user.id), chat_id=str(msg.chat_id), text=msg.text)
+            user_id=str(user.id), chat_id=str(msg.chat_id), text=msg.text,
+            display_name=getattr(user, "first_name", None) or getattr(user, "username", None) or "")
 
     @staticmethod
     def split_text(text: str, limit: int = TELEGRAM_LIMIT) -> list[str]:

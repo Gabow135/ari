@@ -7,6 +7,7 @@ class IncomingMessage:
     user_id: str
     chat_id: str
     text: str
+    display_name: str = ""  # used to sign messages Ari sends on this user's behalf
 
 
 @dataclass(frozen=True, slots=True)
