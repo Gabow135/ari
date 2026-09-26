@@ -37,14 +37,21 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     def _token(self):
-        path = self.path.split("?", 1)[0].strip("/").split("/")
-        return path[1] if len(path) == 2 and path[0] == "v" else None
+        parts = [p for p in self.path.split("?", 1)[0].split("/") if p]
+        return parts[1] if len(parts) == 2 and parts[0] == "v" else None
 
     def _reply(self, status: int, body: str, ctype: str = "text/html; charset=utf-8"):
         data = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'none'; form-action 'self'; base-uri 'none'",
+        )
         self.end_headers()
         self.wfile.write(data)
         log.info("%s /v/<redacted> -> %s", self.command, status)  # redacted

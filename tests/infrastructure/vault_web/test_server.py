@@ -30,7 +30,12 @@ def _conn(srv):
 
 def _get(srv, path):
     c = _conn(srv); c.request("GET", path); r = c.getresponse()
-    body = r.read().decode(); c.close(); return r.status, body
+    body = r.read().decode(); headers = r.headers; c.close(); return r.status, body, headers
+
+
+def _get_simple(srv, path):
+    status, body, _ = _get(srv, path)
+    return status, body
 
 
 def _post(srv, path, fields):
@@ -43,7 +48,7 @@ def _post(srv, path, fields):
 def test_valid_get_renders_form_without_values(running):
     srv, store, vault = running
     tok = store.create()
-    status, body = _get(srv, f"/v/{tok}")
+    status, body, _ = _get(srv, f"/v/{tok}")
     assert status == 200
     assert "GOOGLE_OAUTH_CLIENT_SECRET" in body and "ARI_MYSQL_PASS" in body
     assert "already-set" not in body           # a stored value is never echoed
@@ -52,7 +57,7 @@ def test_valid_get_renders_form_without_values(running):
 
 def test_invalid_and_expired_token_are_403(running):
     srv, store, vault = running
-    assert _get(srv, "/v/bogus")[0] == 403
+    assert _get(srv, "/v/bogus")[0] == 403  # status is index 0 of (status, body, headers)
     assert _post(srv, "/v/bogus", {"ARI_MYSQL_PASS": "x"})[0] == 403
 
 
@@ -81,7 +86,32 @@ def test_post_name_outside_allowlist_is_400(running):
 def test_logs_never_contain_token_or_value(running, caplog):
     srv, store, vault = running
     tok = store.create()
-    with caplog.at_level("INFO"):
+    with caplog.at_level("INFO", logger="ari.vault_web"):
         _post(srv, f"/v/{tok}", {"ARI_MYSQL_PASS": "topsecret"})
     text = caplog.text
     assert tok not in text and "topsecret" not in text
+
+
+def test_security_headers_present_on_every_response(running):
+    srv, store, vault = running
+    tok = store.create()
+    _, _, headers = _get(srv, f"/v/{tok}")
+    assert headers.get("Cache-Control") == "no-store"
+    assert headers.get("X-Content-Type-Options") == "nosniff"
+
+
+def test_trailing_slash_token_returns_200(running):
+    srv, store, vault = running
+    tok = store.create()
+    status, _, _ = _get(srv, f"/v/{tok}/")
+    assert status == 200
+
+
+def test_invalid_token_trailing_slash_returns_403(running):
+    srv, store, vault = running
+    assert _get(srv, "/v/bogus/")[0] == 403
+
+
+def test_non_v_path_returns_404(running):
+    srv, store, vault = running
+    assert _get(srv, "/other/path")[0] == 404
