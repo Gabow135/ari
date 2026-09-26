@@ -89,3 +89,31 @@ async def test_write_tools_denied_outside_chat(deps, context):
     assert await t.recordar_dato("a", "b") == DENIED
     assert await t.olvidar_dato("a") == DENIED
     assert "No tienes" in await t.listar_agenda()  # read-only still works
+
+
+async def test_cancelar_invalid_id_string(deps):
+    _, _, log = deps
+    out = await _tools(deps).cancelar("abc")
+    assert "No encontré" in out
+    assert await log.receipts("t1") == []
+
+
+async def test_cancelar_invalid_id_none(deps):
+    _, _, log = deps
+    out = await _tools(deps).cancelar(None)
+    assert "No encontré" in out
+    assert await log.receipts("t1") == []
+
+
+async def test_recordar_dato_key_too_long(deps):
+    _, _, log = deps
+    out = await _tools(deps).recordar_dato("a" * 101, "x")
+    assert "demasiado largo" in out
+    assert await log.receipts("t1") == []
+
+
+async def test_recordar_dato_value_too_long(deps):
+    _, _, log = deps
+    out = await _tools(deps).recordar_dato("a", "x" * 501)
+    assert "demasiado largo" in out
+    assert await log.receipts("t1") == []

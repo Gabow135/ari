@@ -77,10 +77,14 @@ class AriTools:
     async def cancelar(self, id: int) -> str:
         if not self._allowed("cancelar"):
             return DENIED
-        item = await self._schedule.get(int(id))
+        try:
+            id_int = int(id)
+        except (ValueError, TypeError):
+            return f"No encontré el #{id} entre tus recordatorios."
+        item = await self._schedule.get(id_int)
         if (item is None or item.user_id != self._a.user_id
                 or item.status not in (ACTIVE, PAUSED, RUNNING)):
-            return f"No encontré el #{id} entre tus recordatorios."
+            return f"No encontré el #{id_int} entre tus recordatorios."
         await self._schedule.set_status(item.id, CANCELLED)
         return await self._receipt(f"🗑️ Cancelado #{item.id}: {item.text}")
 
