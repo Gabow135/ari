@@ -47,6 +47,7 @@ from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStor
 from ari.infrastructure.soul.soul_loader import SoulLoader
 from ari.infrastructure.tools.mcp_registry import McpRegistry
 from ari.infrastructure.tools.turn_config import TurnConfigWriter
+from ari.infrastructure.vault.fernet_vault import FernetVault
 from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
@@ -105,6 +106,10 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     dim = len((await embeddings.embed(["probe"]))[0])
     conn = await connect(settings.db_path, embedding_dim=dim)
     memory = SqliteMemoryAdapter(conn, embedding_dim=dim)
+    vault = FernetVault(settings.vault_path, settings.vault_key)
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    sensitive = (project_root, settings.vault_path,
+                 os.path.join(project_root, ".env"), os.path.abspath(settings.claude_config_dir))
     registry = McpRegistry(settings.mcp_config, ".env",
                            os.path.join(settings.claude_config_dir, "mcp"))
     turn_log = SqliteTurnLog(conn)

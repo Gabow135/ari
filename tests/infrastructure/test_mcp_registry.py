@@ -4,6 +4,7 @@ import os
 import pytest
 
 from ari.infrastructure.tools.mcp_registry import McpRegistry
+from tests.fakes import FakeVault
 
 CONFIG = {
     "mcpServers": {
@@ -25,13 +26,14 @@ def _which(name):
 
 
 def _registry(tmp_path, config=CONFIG, environ=ENV, platform="posix", which=_which,
-              env_text=""):
+              env_text="", vault=None):
     cfg = tmp_path / "servers.json"
     cfg.write_text(json.dumps(config), encoding="utf-8")
     env_file = tmp_path / ".env"
     env_file.write_text(env_text, encoding="utf-8")
     return McpRegistry(str(cfg), str(env_file), str(tmp_path / "out"),
-                       environ=dict(environ), platform=platform, which=which), cfg, env_file
+                       environ=dict(environ), platform=platform, which=which,
+                       vault=vault), cfg, env_file
 
 
 def _load(path):
@@ -238,3 +240,129 @@ def test_missing_launcher_detail_shows_raw_unresolved_command(tmp_path):
                           which=lambda n: None)
     assert reg.servers_for(True) == ((), None)
     assert reg.status()[0].detail == "no se encontró '${CMD}' en el PATH"
+
+
+# ---- V1: vault resolution ---------------------------------------------------
+
+def test_vault_value_is_used(tmp_path):
+    reg, _, _ = _registry(tmp_path, environ={}, vault=FakeVault(dict(ENV)))
+    servers = _load(reg.servers_for(is_owner=True)[1])
+    assert servers["google"]["env"]["GOOGLE_OAUTH_CLIENT_ID"] == "gid-1"
+
+
+def test_vault_wins_over_env_and_dotenv(tmp_path):
+    reg, _, _ = _registry(tmp_path, env_text="GID=from-file\n",
+                          vault=FakeVault({"GID": "from-vault", "DB": "ventas",
+                                           "DBPASS": "s3cret", "DOCS_TOKEN": "tok"}))
+    servers = _load(reg.servers_for(is_owner=True)[1])
+    assert servers["google"]["env"]["GOOGLE_OAUTH_CLIENT_ID"] == "from-vault"
+
+
+def test_env_used_when_absent_from_vault(tmp_path):
+    reg, _, _ = _registry(tmp_path, vault=FakeVault({}))  # empty vault
+    servers = _load(reg.servers_for(is_owner=True)[1])
+    assert servers["google"]["env"]["GOOGLE_OAUTH_CLIENT_ID"] == "gid-1"  # from ENV
+
+
+def test_missing_everywhere_disables_server(tmp_path):
+    env = {k: v for k, v in ENV.items() if k != "DBPASS"}
+    reg, _, _ = _registry(tmp_path, environ=env, vault=FakeVault({}))
+    status = {s.name: s for s in reg.status()}
+    assert not status["mysql"].ok and status["mysql"].detail == "falta DBPASS"
+
+
+def test_guarded_server_disabled_when_root_exposes_sensitive(tmp_path):
+    cfg = {"mcpServers": {"filesystem": {
+        "command": "npx",
+        "args": ["-y", "server-filesystem", "${ARI_FS_ROOT}"],
+        "guarded": True, "access": "owner", "description": "Archivos"}}}
+    # root == the sensitive .env's parent (contains it)
+    root = str(tmp_path)
+    sensitive = (str(tmp_path / ".env"),)
+    cfgp = tmp_path / "servers.json"
+    cfgp.write_text(json.dumps(cfg), encoding="utf-8")
+    envp = tmp_path / ".env"
+    envp.write_text("", encoding="utf-8")
+    reg = McpRegistry(str(cfgp), str(envp), str(tmp_path / "out"),
+                      environ={"ARI_FS_ROOT": root}, which=_which,
+                      sensitive_paths=sensitive)
+    assert reg.servers_for(True) == ((), None)
+    assert reg.status()[0].detail == f"root inseguro: expone {tmp_path / '.env'}"
+
+
+def test_guarded_server_enabled_for_safe_root(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    cfg = {"mcpServers": {"filesystem": {
+        "command": "npx",
+        "args": ["-y", "server-filesystem", "${ARI_FS_ROOT}"],
+        "guarded": True, "access": "owner", "description": "Archivos"}}}
+    cfgp = tmp_path / "servers.json"
+    cfgp.write_text(json.dumps(cfg), encoding="utf-8")
+    envp = tmp_path / ".env"
+    envp.write_text("", encoding="utf-8")
+    reg = McpRegistry(str(cfgp), str(envp), str(tmp_path / "out"),
+                      environ={"ARI_FS_ROOT": str(work)}, which=_which,
+                      sensitive_paths=(str(tmp_path / ".ari" / "vault.enc"),))
+    names, path = reg.servers_for(True)
+    assert names == ("filesystem",)
+    servers = _load(path)
+    assert "guarded" not in servers["filesystem"]  # Ari-only field stripped
+
+
+def test_guarded_server_disabled_when_root_exposed_via_env_value(tmp_path):
+    """A guarded server whose sensitive path appears in an env dict value is disabled."""
+    cfg = {"mcpServers": {"filesystem": {
+        "command": "npx",
+        "args": ["-y", "server-filesystem", "/safe/work"],
+        "env": {"FS_ROOT": "${ARI_FS_ROOT}"},
+        "guarded": True, "access": "owner", "description": "Archivos"}}}
+    root = str(tmp_path)  # root via env value, not args
+    sensitive = (str(tmp_path / ".env"),)
+    cfgp = tmp_path / "servers.json"
+    cfgp.write_text(json.dumps(cfg), encoding="utf-8")
+    envp = tmp_path / ".env"
+    envp.write_text("", encoding="utf-8")
+    reg = McpRegistry(str(cfgp), str(envp), str(tmp_path / "out"),
+                      environ={"ARI_FS_ROOT": root}, which=_which,
+                      sensitive_paths=sensitive)
+    assert reg.servers_for(True) == ((), None)
+    assert reg.status()[0].detail == f"root inseguro: expone {tmp_path / '.env'}"
+
+
+def test_guarded_server_disabled_when_root_exposed_via_command(tmp_path):
+    """A guarded server whose command string is itself a sensitive path is disabled."""
+    sensitive_cmd = str(tmp_path / "secret-bin")
+    # Make the command 'found' so _launcher doesn't error first
+    cfg = {"mcpServers": {"guarded-cmd": {
+        "command": "${SECRET_CMD}",
+        "args": [],
+        "guarded": True, "access": "owner", "description": "test"}}}
+    cfgp = tmp_path / "servers.json"
+    cfgp.write_text(json.dumps(cfg), encoding="utf-8")
+    envp = tmp_path / ".env"
+    envp.write_text("", encoding="utf-8")
+    # Sensitive path is the command itself; the command IS the sensitive path parent
+    sensitive = (str(tmp_path / "secret-bin" / "key"),)
+    reg = McpRegistry(str(cfgp), str(envp), str(tmp_path / "out"),
+                      environ={"SECRET_CMD": sensitive_cmd},
+                      which=lambda n: n,  # always found
+                      sensitive_paths=sensitive)
+    assert reg.servers_for(True) == ((), None)
+    assert reg.status()[0].detail == f"root inseguro: expone {tmp_path / 'secret-bin' / 'key'}"
+
+
+def test_guarded_server_not_offered_to_users(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    cfg = {"mcpServers": {"filesystem": {
+        "command": "npx", "args": ["-y", "sf", "${ARI_FS_ROOT}"],
+        "guarded": True, "access": "owner", "description": "Archivos"}}}
+    cfgp = tmp_path / "servers.json"
+    cfgp.write_text(json.dumps(cfg), encoding="utf-8")
+    envp = tmp_path / ".env"
+    envp.write_text("", encoding="utf-8")
+    reg = McpRegistry(str(cfgp), str(envp), str(tmp_path / "out"),
+                      environ={"ARI_FS_ROOT": str(work)}, which=_which,
+                      sensitive_paths=())
+    assert reg.servers_for(is_owner=False) == ((), None)

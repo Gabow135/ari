@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Tools / MCP (3A)
     mcp_config: str = "./mcp/servers.json"
     chat_timeout_seconds: int = 180
+    # Secrets vault (filesystem MCP root ARI_FS_ROOT is read raw by the registry)
+    vault_key: str = ""
+    vault_path: str = "~/.ari/vault.enc"
 
     @property
     def owner_id_set(self) -> set[str]:
