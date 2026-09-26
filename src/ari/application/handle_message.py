@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from ari.application.schedule.schedule_actions import extract_actions
 from ari.domain.agent.agent_service import AgentService
 from ari.domain.agent.message import Message
 from ari.domain.memory.memory_port import MemoryPort
@@ -68,11 +69,7 @@ class HandleMessage:
                 # (record_failure/pause) instead of silently "succeeding".
                 raise
             return OutgoingMessage(incoming.chat_id, TIMEOUT_REPLY)
-        if self._actions is not None:
-            # Action blocks become stored items + confirmations; only honored for
-            # the user's own messages (allow_actions=False for scheduled runs).
-            reply = await self._actions.apply(incoming.user_id, incoming.chat_id, reply,
-                                              allow=allow_actions)
+        reply, _legacy = extract_actions(reply)  # stray legacy blocks never reach the user
 
         await self._memory.append_message(
             Message(incoming.user_id, "assistant", reply, datetime.now(timezone.utc)))

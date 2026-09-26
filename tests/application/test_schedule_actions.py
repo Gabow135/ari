@@ -1,17 +1,17 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
 
+from ari.application.schedule.agenda_format import created_receipt, item_line
 from ari.application.schedule.schedule_actions import ScheduleActions, extract_actions
-from ari.domain.schedule.entities import CANCELLED, REMINDER, RUNNING
+from ari.domain.schedule.entities import PAUSED, REMINDER, TASK, ScheduleItem
 from ari.infrastructure.persistence.db import connect
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 
 TZ = ZoneInfo("America/Guayaquil")
 NOW = datetime(2026, 9, 25, 20, 0, tzinfo=timezone.utc)  # vie 15:00 local
-REMIND = ('<ari-action>{"type":"reminder","at":"2026-09-26T09:00:00-05:00",'
-          '"text":"llamar a Juan"}</ari-action>')
+AT = datetime(2026, 9, 26, 14, 0, tzinfo=timezone.utc)  # sáb 09:00 local
 
 
 @pytest.fixture
@@ -21,88 +21,37 @@ async def store():
     await conn.close()
 
 
-@pytest.fixture
-def actions(store):
-    return ScheduleActions(store, TZ, max_items=2, clock=lambda: NOW)
-
-
 def test_extract_strips_blocks_including_unclosed():
-    clean, blocks = extract_actions(f"Listo. {REMIND}\n<ari-action>{{\"type\":")
+    clean, blocks = extract_actions('Listo. <ari-action>{"a":1}</ari-action>\n<ari-action>{"type":')
     assert clean == "Listo." and len(blocks) == 1
-    assert "<ari-action>" not in clean
 
 
-async def test_apply_stores_and_appends_code_confirmation(actions, store):
-    out = await actions.apply("u1", "c1", f"Claro, te lo recuerdo.\n{REMIND}")
-    assert out.startswith("Claro, te lo recuerdo.")
-    assert "✅ Recordatorio #1: llamar a Juan — sáb 26/09 09:00" in out
-    item = await store.get(1)
-    assert (item.kind, item.chat_id, item.next_run_at) == (
-        REMINDER, "c1", datetime(2026, 9, 26, 14, 0, tzinfo=timezone.utc))
+def test_item_line_formats():
+    one = ScheduleItem(12, "u", "c", REMINDER, "llamar a Juan", AT, None, "active")
+    assert item_line(one, TZ) == "#12 · sáb 26/09 09:00 · llamar a Juan"
+    rec = ScheduleItem(13, "u", "c", TASK, "resumen",
+                       datetime(2026, 9, 28, 13, 0, tzinfo=timezone.utc), "0 8 * * 1", PAUSED)
+    assert item_line(rec, TZ) == ("#13 · cada lunes 08:00 (próxima lun 28/09 08:00) · resumen"
+                                  " · ⏸️ pausada")
 
 
-async def test_action_only_reply_still_confirms(actions):
-    out = await actions.apply("u1", "c1", REMIND)
-    assert out.startswith("✅ Recordatorio #1")
+def test_created_receipts():
+    assert created_receipt(12, REMINDER, "llamar a Juan", AT, None, TZ) == \
+        "✅ Recordatorio #12: llamar a Juan — sáb 26/09 09:00"
+    nxt = datetime(2026, 9, 28, 13, 0, tzinfo=timezone.utc)
+    assert created_receipt(13, TASK, "resumen", nxt, "0 8 * * 1", TZ) == \
+        "🔁 Tarea #13 (cada lunes 08:00): resumen — próxima: lun 28/09 08:00"
 
 
-async def test_recurring_confirmation(actions):
-    out = await actions.apply("u1", "c1", '<ari-action>{"type":"task","cron":"0 8 * * 1",'
-                                          '"text":"resumen"}</ari-action>')
-    assert "🔁 Tarea #1 (cada lunes 08:00): resumen — próxima: lun 28/09 08:00" in out
-
-
-async def test_invalid_block_stores_nothing_and_says_why(actions, store):
-    out = await actions.apply("u1", "c1", 'Ok <ari-action>{"type":"reminder",'
-                                          '"at":"2020-01-01T00:00","text":"x"}</ari-action>')
-    assert "⚠️ No pude agendarlo: la fecha ya pasó" in out
-    assert await store.count_active("u1") == 0
-
-
-async def test_malformed_json_is_reported(actions):
-    out = await actions.apply("u1", "c1", "Ok <ari-action>{not json}</ari-action>")
-    assert "⚠️ No pude agendarlo" in out
-
-
-async def test_blocks_ignored_when_not_allowed(actions, store):
-    out = await actions.apply("u1", "c1", f"Resultado {REMIND}", allow=False)
-    assert out == "Resultado"
-    assert await store.count_active("u1") == 0
-
-
-async def test_cancel_own_but_not_foreign(actions, store):
-    await actions.apply("u1", "c1", REMIND)
-    foreign = await actions.apply("u2", "c2", '<ari-action>{"type":"cancel","id":1}</ari-action>')
-    assert "No encontré el #1" in foreign
-    own = await actions.apply("u1", "c1", '<ari-action>{"type":"cancel","id":1}</ari-action>')
-    assert "🗑️ Cancelado #1" in own
-    assert (await store.get(1)).status == CANCELLED
-
-
-async def test_cancel_running_item(actions, store):
-    await actions.apply("u1", "c1", REMIND)
-    await store.set_status(1, RUNNING)
-    out = await actions.apply("u1", "c1", '<ari-action>{"type":"cancel","id":1}</ari-action>')
-    assert "🗑️ Cancelado #1" in out
-    assert (await store.get(1)).status == CANCELLED
-
-
-async def test_per_user_cap(actions):
-    await actions.apply("u1", "c1", REMIND)
-    await actions.apply("u1", "c1", REMIND)
-    out = await actions.apply("u1", "c1", REMIND)
-    assert "ya tienes 2" in out
-
-
-async def test_context_has_time_items_and_format(actions):
-    await actions.apply("u1", "c1", REMIND)
-    ctx = await actions.context("u1")
+async def test_context_has_time_and_tools_hint_but_no_block_format(store):
+    ctx = await ScheduleActions(store, TZ, 20, clock=lambda: NOW).context("u1")
     assert "viernes 25/09/2026 15:00 (America/Guayaquil)" in ctx
-    assert "#1 · sáb 26/09 09:00 · llamar a Juan" in ctx
-    assert "<ari-action>" in ctx
+    assert "agendar" in ctx and "listar_agenda" in ctx
+    assert "<ari-action>" not in ctx
 
 
-async def test_list_text(actions, store):
+async def test_list_text(store):
+    actions = ScheduleActions(store, TZ, 20, clock=lambda: NOW)
     assert "No tienes" in await actions.list_text("u1")
-    await actions.apply("u1", "c1", REMIND)
+    await store.add("u1", "c1", REMINDER, "llamar a Juan", AT, None)
     assert "#1 · sáb 26/09 09:00 · llamar a Juan" in await actions.list_text("u1")

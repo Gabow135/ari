@@ -52,24 +52,14 @@ async def test_prompt_uses_soul_and_role():
     assert "alma de test" in user_prompt and "/restart" not in user_prompt
 
 
-class _FakeActions:
-    def __init__(self):
-        self.applied = []
-
+class _ContextOnly:
     async def context(self, user_id):
         return "## CONTEXTO-AGENDA"
-
-    async def apply(self, user_id, chat_id, reply, allow=True):
-        self.applied.append((user_id, chat_id, allow))
-        return reply.replace("<blk>", "") + " ✅"
 
 
 class _BrokenContextActions:
     async def context(self, user_id):
         raise RuntimeError("db is down")
-
-    async def apply(self, user_id, chat_id, reply, allow=True):
-        return reply
 
 
 async def test_context_read_failure_does_not_break_the_reply():
@@ -80,18 +70,13 @@ async def test_context_read_failure_does_not_break_the_reply():
     assert out.text == "hello back"
 
 
-async def test_actions_context_in_prompt_and_reply_processed():
-    llm = FakeLLM(reply="hecho<blk>")
-    acts = _FakeActions()
-    mem = FakeMemory()
-    handler = HandleMessage(memory=mem, llm=llm, embeddings=FakeEmbeddings(),
-                            agent=AgentService(), actions=acts)
-    out = await handler(IncomingMessage("u1", "c1", "recuérdame algo"))
+async def test_actions_context_in_prompt_and_legacy_blocks_hidden():
+    llm = FakeLLM(reply='hecho <ari-action>{"type":"cancel","id":1}</ari-action>')
+    handler = HandleMessage(memory=FakeMemory(), llm=llm, embeddings=FakeEmbeddings(),
+                            agent=AgentService(), actions=_ContextOnly())
+    out = await handler(IncomingMessage("u1", "c1", "hola"))
     assert "## CONTEXTO-AGENDA" in llm.calls[0][0]
-    assert out.text == "hecho ✅"
-    assert (await mem.recent_messages("u1", 10))[-1].content == "hecho ✅"
-    await handler(IncomingMessage("u1", "c1", "tarea"), allow_actions=False)
-    assert acts.applied == [("u1", "c1", True), ("u1", "c1", False)]
+    assert out.text == "hecho"
 
 
 from ari.domain.ports.llm_port import LLMTimeoutError
