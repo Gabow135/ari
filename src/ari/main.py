@@ -27,6 +27,7 @@ from ari.application.schedule.run_due_items import RunDueItems
 from ari.application.schedule.schedule_actions import ScheduleActions
 from ari.application.schedule.scheduler import Scheduler
 from ari.application.schedule.system_notices import SystemNotices
+from ari.application.text_format import truncate
 from ari.application.tools.tool_policy import AriServerSpec, ToolPolicy
 from ari.config.settings import Settings
 from ari.domain.agent.agent_service import AgentService
@@ -53,6 +54,7 @@ from ari.infrastructure.vault.fernet_vault import FernetVault
 from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("ari.main")
 
 # How long shutdown waits for in-flight scheduled tasks (RunDueItems background
 # tasks) to finish before giving up and closing the DB connection anyway.
@@ -219,13 +221,22 @@ def main() -> None:
             _background_tasks.add(task)
             task.add_done_callback(_background_tasks.discard)
 
+        coding_requests = SqliteCodingRequests(c.conn)
         coding_runner = CodingRequestRunner(
-            SqliteCodingRequests(c.conn), request_coding, store, send, spawn, _utcnow,
+            coding_requests, request_coding, store, send, spawn, _utcnow,
             progress=lambda chat_id: ProgressMessage(app.bot, int(chat_id)))
 
         async def after_turn() -> None:
-            await flusher()
-            await coding_runner()
+            # Each step is guarded on its own so a failure in one (e.g. the
+            # outbox flush) never skips the other (e.g. a queued code proposal).
+            try:
+                await flusher()
+            except Exception:
+                log.exception("outbox flush failed")
+            try:
+                await coding_runner()
+            except Exception:
+                log.exception("coding request runner failed")
 
         c.handler._after_turn = after_turn  # flush + proposed code, right after each turn
 
@@ -254,6 +265,9 @@ def main() -> None:
             owners=settings.owner_id_set, send=send, tz=tz, quiet=quiet,
             interval_minutes=settings.heartbeat_minutes, clock=_utcnow, tools=c.tools)
         await c.schedule_store.reset_running()  # items interrupted by a crash/restart
+        for stranded in await coding_requests.reset_taken():  # plans interrupted likewise
+            await send(stranded.chat_id,
+                      f"Se interrumpió la preparación del plan: {truncate(stranded.instruction)}")
         scheduler = Scheduler([due, notices.tick, heartbeat, flusher, coding_runner])
         scheduler.start()
         app.bot_data["scheduler"] = scheduler

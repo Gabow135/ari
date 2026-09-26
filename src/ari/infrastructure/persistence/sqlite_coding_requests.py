@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
-from ari.domain.coding.requests import PENDING, TAKEN, CodingRequest
+from ari.domain.coding.requests import FAILED, PENDING, TAKEN, CodingRequest
 
 _COLS = "id, user_id, chat_id, instruction, target, created_at"
 
@@ -42,6 +42,19 @@ class SqliteCodingRequests:
             cur = await self._conn.execute(
                 f"UPDATE coding_requests SET status = ? WHERE status = ? RETURNING {_COLS}",
                 (TAKEN, PENDING))
+            rows = await cur.fetchall()
+            await self._conn.commit()
+        return sorted((_request(r) for r in rows), key=lambda r: r.id)
+
+    async def reset_taken(self) -> list[CodingRequest]:
+        """Mark every stranded `taken` row (e.g. the process crashed/restarted
+        mid-plan) as `failed` and return them, so the caller can notify their
+        chats. Single guarded UPDATE … RETURNING, same pattern as claim_pending."""
+        async with self._lock:
+            cur = await self._conn.execute(
+                f"UPDATE coding_requests SET status = ?, detail = ? WHERE status = ? "
+                f"RETURNING {_COLS}",
+                (FAILED, "interrumpido", TAKEN))
             rows = await cur.fetchall()
             await self._conn.commit()
         return sorted((_request(r) for r in rows), key=lambda r: r.id)
