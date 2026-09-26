@@ -1,0 +1,131 @@
+import json
+import os
+
+from ari.infrastructure.tools.mcp_registry import McpRegistry
+
+CONFIG = {
+    "mcpServers": {
+        "google": {"command": "uvx", "args": ["workspace-mcp"],
+                   "env": {"GOOGLE_OAUTH_CLIENT_ID": "${GID}"},
+                   "access": "owner", "description": "Gmail del creador"},
+        "mysql": {"command": "npx", "args": ["-y", "mysql-mcp", "--db=${DB}"],
+                  "env": {"MYSQL_PASS": "${DBPASS}"}, "description": "Base (solo lectura)"},
+        "docs": {"url": "https://docs.example/mcp",
+                 "headers": {"Authorization": "Bearer ${DOCS_TOKEN}"},
+                 "access": "users", "description": "Documentación"},
+    }
+}
+ENV = {"GID": "gid-1", "DB": "ventas", "DBPASS": "s3cret", "DOCS_TOKEN": "tok"}
+
+
+def _which(name):
+    return {"uvx": "/usr/bin/uvx", "npx": "/usr/bin/npx"}.get(name)
+
+
+def _registry(tmp_path, config=CONFIG, environ=ENV, platform="posix", which=_which,
+              env_text=""):
+    cfg = tmp_path / "servers.json"
+    cfg.write_text(json.dumps(config), encoding="utf-8")
+    env_file = tmp_path / ".env"
+    env_file.write_text(env_text, encoding="utf-8")
+    return McpRegistry(str(cfg), str(env_file), str(tmp_path / "out"),
+                       environ=dict(environ), platform=platform, which=which), cfg, env_file
+
+
+def _load(path):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)["mcpServers"]
+
+
+def test_owner_gets_all_servers_resolved_and_stripped(tmp_path):
+    reg, _, _ = _registry(tmp_path)
+    names, path = reg.servers_for(is_owner=True)
+    assert set(names) == {"google", "mysql", "docs"}
+    servers = _load(path)
+    assert servers["google"]["env"]["GOOGLE_OAUTH_CLIENT_ID"] == "gid-1"
+    assert "access" not in servers["google"] and "description" not in servers["google"]
+    assert os.path.dirname(path) == str(tmp_path / "out")
+
+
+def test_users_only_get_users_servers(tmp_path):
+    reg, _, _ = _registry(tmp_path)
+    names, path = reg.servers_for(is_owner=False)
+    assert names == ("docs",)
+    assert set(_load(path)) == {"docs"}
+
+
+def test_default_access_is_owner(tmp_path):
+    reg, _, _ = _registry(tmp_path)
+    assert "mysql" not in reg.servers_for(is_owner=False)[0]  # no "access" key → owner
+
+
+def test_var_embedded_in_longer_string_is_substituted(tmp_path):
+    reg, _, _ = _registry(tmp_path)
+    servers = _load(reg.servers_for(is_owner=True)[1])
+    assert servers["mysql"]["args"] == ["-y", "mysql-mcp", "--db=ventas"]
+    assert servers["docs"]["headers"]["Authorization"] == "Bearer tok"
+
+
+def test_missing_var_disables_only_that_server(tmp_path):
+    env = {k: v for k, v in ENV.items() if k != "DBPASS"}
+    reg, _, _ = _registry(tmp_path, environ=env)
+    assert "mysql" not in reg.servers_for(is_owner=True)[0]
+    status = {s.name: s for s in reg.status()}
+    assert not status["mysql"].ok and status["mysql"].detail == "falta DBPASS"
+    assert status["google"].ok
+
+
+def test_env_file_used_when_not_in_os_environ_and_hot_reloaded(tmp_path):
+    env = {k: v for k, v in ENV.items() if k != "DBPASS"}
+    reg, _, env_file = _registry(tmp_path, environ=env, env_text="DBPASS=from-file\n")
+    assert _load(reg.servers_for(True)[1])["mysql"]["env"]["MYSQL_PASS"] == "from-file"
+    env_file.write_text("DBPASS=rotated-longer\n", encoding="utf-8")
+    assert _load(reg.servers_for(True)[1])["mysql"]["env"]["MYSQL_PASS"] == "rotated-longer"
+
+
+def test_os_environ_wins_over_env_file(tmp_path):
+    reg, _, _ = _registry(tmp_path, env_text="DBPASS=from-file\n")
+    assert _load(reg.servers_for(True)[1])["mysql"]["env"]["MYSQL_PASS"] == "s3cret"
+
+
+def test_missing_launcher_disables_server(tmp_path):
+    reg, _, _ = _registry(tmp_path, which=lambda n: "/usr/bin/npx" if n == "npx" else None)
+    assert "google" not in reg.servers_for(True)[0]
+    status = {s.name: s for s in reg.status()}
+    assert status["google"].detail == "no se encontró 'uvx' en el PATH"
+
+
+def test_windows_cmd_launchers_are_wrapped(tmp_path):
+    which = lambda n: {"uvx": r"C:\u\uvx.exe", "npx": r"C:\n\npx.cmd"}.get(n)
+    reg, _, _ = _registry(tmp_path, platform="nt", which=which)
+    servers = _load(reg.servers_for(True)[1])
+    assert servers["mysql"]["command"] == "cmd"
+    assert servers["mysql"]["args"] == ["/c", "npx", "-y", "mysql-mcp", "--db=ventas"]
+    assert servers["google"]["command"] == "uvx"  # .exe needs no wrapping
+
+
+def test_invalid_access_disables_server(tmp_path):
+    cfg = {"mcpServers": {"x": {"command": "npx", "access": "everyone"}}}
+    reg, _, _ = _registry(tmp_path, config=cfg)
+    assert reg.servers_for(True) == ((), None)
+    assert reg.status()[0].detail == "access inválido: 'everyone'"
+
+
+def test_invalid_json_keeps_last_valid_config(tmp_path):
+    reg, cfg, _ = _registry(tmp_path)
+    assert reg.servers_for(True)[0]
+    cfg.write_text("{ not json", encoding="utf-8")
+    assert set(reg.servers_for(True)[0]) == {"google", "mysql", "docs"}
+
+
+def test_missing_config_file_means_no_servers(tmp_path):
+    reg = McpRegistry(str(tmp_path / "nope.json"), str(tmp_path / ".env"),
+                      str(tmp_path / "out"), environ={}, which=_which)
+    assert reg.servers_for(True) == ((), None)
+    assert reg.status() == []
+
+
+def test_descriptions(tmp_path):
+    reg, _, _ = _registry(tmp_path)
+    assert reg.descriptions(is_owner=False) == [("docs", "Documentación")]
+    assert ("google", "Gmail del creador") in reg.descriptions(is_owner=True)
