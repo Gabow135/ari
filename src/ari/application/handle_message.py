@@ -61,6 +61,7 @@ class HandleMessage:
         turn_cm = (self._tools.turn(incoming.user_id, context, incoming.display_name,
                                     incoming.chat_id) if self._tools else no_turn())
         timed_out = False
+        error: Exception | None = None
         try:
             async with turn_cm as turn:
                 system = self._agent.build_prompt(
@@ -77,6 +78,21 @@ class HandleMessage:
                         # Scheduled task run: let RunDueItems count it as a failure.
                         raise
                     reply, timed_out = TIMEOUT_REPLY, True
+                except Exception as exc:
+                    if not allow_actions:
+                        # Scheduled task run: let RunDueItems count it as a failure.
+                        raise
+                    log.warning("chat call failed for %s: %s", incoming.user_id, exc)
+                    error = exc
+            if error is not None:
+                # A tool may have run before the LLM call blew up: show what stuck.
+                receipts = await self._receipts(turn)
+                if receipts:
+                    return OutgoingMessage(
+                        incoming.chat_id,
+                        "Tuve un problema al terminar la respuesta, pero esto sí quedó "
+                        "hecho:\n\n" + "\n".join(receipts))
+                raise error
             reply, _legacy = extract_actions(reply)  # stray legacy blocks stay hidden
             receipts = await self._receipts(turn)
             if receipts:
@@ -85,7 +101,10 @@ class HandleMessage:
                 return OutgoingMessage(incoming.chat_id, reply)
         finally:
             if self._after_turn is not None:
-                await self._safe(self._after_turn(), None)
+                try:
+                    await self._after_turn()
+                except Exception:
+                    log.exception("after-turn flush failed")
 
         await self._memory.append_message(
             Message(incoming.user_id, "assistant", reply, datetime.now(timezone.utc)))

@@ -179,6 +179,71 @@ async def test_scheduled_run_uses_task_context():
     assert policy.turns[0][1] == "task"
 
 
+async def test_llm_error_after_a_tool_ran_still_shows_receipt_and_flushes():
+    class BrokenLLM(FakeLLM):
+        async def complete(self, system, messages, max_tokens=1024, toolset=None):
+            raise RuntimeError("claude CLI returned an error")
+
+    flushed = []
+
+    async def after_turn():
+        flushed.append(True)
+
+    out = await HandleMessage(memory=FakeMemory(), llm=BrokenLLM(), embeddings=FakeEmbeddings(),
+                              agent=AgentService(), tools=_FakePolicy(),
+                              turn_log=_FakeTurnLog({"turn-u1": ["🧠 Guardé: a = b"]}),
+                              after_turn=after_turn)(IncomingMessage("u1", "c1", "hola"))
+    assert out.text.startswith("Tuve un problema")
+    assert "🧠 Guardé: a = b" in out.text
+    assert flushed == [True]
+
+
+async def test_llm_error_without_receipts_propagates_but_still_flushes():
+    class BrokenLLM(FakeLLM):
+        async def complete(self, system, messages, max_tokens=1024, toolset=None):
+            raise RuntimeError("claude CLI returned an error")
+
+    flushed = []
+
+    async def after_turn():
+        flushed.append(True)
+
+    handler = HandleMessage(memory=FakeMemory(), llm=BrokenLLM(), embeddings=FakeEmbeddings(),
+                            agent=AgentService(), tools=_FakePolicy(),
+                            turn_log=_FakeTurnLog({}), after_turn=after_turn)
+    with pytest.raises(RuntimeError):
+        await handler(IncomingMessage("u1", "c1", "hola"))
+    assert flushed == [True]
+
+
+async def test_task_timeout_reraises_and_still_flushes():
+    class SlowLLM(FakeLLM):
+        async def complete(self, system, messages, max_tokens=1024, toolset=None):
+            raise LLMTimeoutError("claude timed out after 180s")
+
+    flushed = []
+
+    async def after_turn():
+        flushed.append(True)
+
+    handler = HandleMessage(memory=FakeMemory(), llm=SlowLLM(), embeddings=FakeEmbeddings(),
+                            agent=AgentService(), tools=_FakePolicy(), after_turn=after_turn)
+    with pytest.raises(LLMTimeoutError):
+        await handler(IncomingMessage("u1", "c1", "hola"), allow_actions=False)
+    assert flushed == [True]
+
+
+async def test_after_turn_failure_does_not_break_the_reply():
+    async def after_turn():
+        raise RuntimeError("outbox flush boom")
+
+    handler = HandleMessage(memory=FakeMemory(), llm=FakeLLM(reply="hola"),
+                            embeddings=FakeEmbeddings(), agent=AgentService(),
+                            tools=_FakePolicy(), after_turn=after_turn)
+    out = await handler(IncomingMessage("u1", "c1", "hola"))
+    assert out.text == "hola"
+
+
 async def test_timeout_gives_a_reply_instead_of_silence():
     class SlowLLM(FakeLLM):
         async def complete(self, system, messages, max_tokens=1024, toolset=None):
