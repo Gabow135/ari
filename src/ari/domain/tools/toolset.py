@@ -23,3 +23,11 @@ class ToolsView:
     text: str
     has_web: bool
     has_mcp: bool
+
+
+@dataclass(frozen=True)
+class Turn:
+    """Tools for one Claude call plus the id Ari's MCP server tags receipts with."""
+    toolset: Toolset
+    view: ToolsView
+    turn_id: str

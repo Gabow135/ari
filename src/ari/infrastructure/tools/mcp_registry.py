@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 from dotenv import dotenv_values
 
+from ari.infrastructure.tools.files import atomic_write_json
+
 log = logging.getLogger("ari.mcp")
 
 OWNER, USERS = "owner", "users"
@@ -65,6 +67,11 @@ class McpRegistry:
     def descriptions(self, is_owner: bool) -> list[tuple[str, str]]:
         self._refresh()
         return [(n, self._meta[n][1]) for n in self._names(is_owner)]
+
+    def resolved(self, is_owner: bool) -> dict[str, dict]:
+        """CLI-ready configs of the role's usable servers (secrets resolved)."""
+        self._refresh()
+        return {n: dict(self._resolved[n]) for n in self._names(is_owner)}
 
     def status(self) -> list[ServerStatus]:
         self._refresh()
@@ -194,21 +201,8 @@ class McpRegistry:
                 log.error("could not remove stale %s: %s", path, exc)
                 return None, False
             return None, True
-        tmp = path + ".tmp"
         try:
-            os.makedirs(self._out_dir, exist_ok=True)
-            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump({"mcpServers": {n: self._resolved[n] for n in names}}, f,
-                              ensure_ascii=False, indent=2)
-                os.replace(tmp, path)
-            except BaseException:
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
-                raise
+            atomic_write_json(path, {"mcpServers": {n: self._resolved[n] for n in names}})
         except OSError as exc:
             log.error("could not write %s: %s", path, exc)
             return None, False
