@@ -212,7 +212,10 @@ def main() -> None:
             owners=settings.owner_id_set, send=send, tz=tz, quiet=quiet,
             interval_minutes=settings.heartbeat_minutes, clock=_utcnow, tools=c.tools)
         await c.schedule_store.reset_running()  # items interrupted by a crash/restart
-        scheduler = Scheduler([due, notices.tick, heartbeat])
+        async def vault_web_sweep() -> None:
+            c.vault_web.sweep_and_maybe_stop()
+
+        scheduler = Scheduler([due, notices.tick, heartbeat, vault_web_sweep])
         scheduler.start()
         app.bot_data["scheduler"] = scheduler
 

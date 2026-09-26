@@ -115,3 +115,20 @@ def test_invalid_token_trailing_slash_returns_403(running):
 def test_non_v_path_returns_404(running):
     srv, store, vault = running
     assert _get(srv, "/other/path")[0] == 404
+
+
+def test_plain_http_client_cannot_talk_to_tls_server(running):
+    """A plain-HTTP (non-TLS) client must not receive a valid response from the
+    HTTPS server; the TLS handshake rejection should raise before any HTTP status
+    is returned."""
+    srv, store, _ = running
+    tok = store.create()
+    conn = http.client.HTTPConnection("127.0.0.1", srv.port, timeout=5)
+    with pytest.raises((
+        http.client.RemoteDisconnected,
+        ConnectionResetError,
+        http.client.BadStatusLine,
+        OSError,
+    )):
+        conn.request("GET", f"/v/{tok}")
+        conn.getresponse()
