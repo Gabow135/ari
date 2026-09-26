@@ -43,6 +43,7 @@ from ari.infrastructure.persistence.db import connect
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 from ari.infrastructure.soul.soul_loader import SoulLoader
 from ari.infrastructure.tools.mcp_registry import McpRegistry
+from ari.infrastructure.vault.fernet_vault import FernetVault
 from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
@@ -94,8 +95,13 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     dim = len((await embeddings.embed(["probe"]))[0])
     conn = await connect(settings.db_path, embedding_dim=dim)
     memory = SqliteMemoryAdapter(conn, embedding_dim=dim)
+    vault = FernetVault(settings.vault_path, settings.vault_key)
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    sensitive = (project_root, settings.vault_path,
+                 os.path.join(project_root, ".env"), settings.claude_config_dir)
     registry = McpRegistry(settings.mcp_config, ".env",
-                           os.path.join(settings.claude_config_dir, "mcp"))
+                           os.path.join(settings.claude_config_dir, "mcp"),
+                           vault=vault, sensitive_paths=sensitive)
     tools = ToolPolicy(registry, Authorizer(settings.owner_id_set).is_owner)
     llm = MonitoredLLM(ClaudeCodeCliAdapter(model=settings.model,
                                             claude_bin=settings.claude_bin, cli_env=env,

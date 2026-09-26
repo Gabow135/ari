@@ -21,6 +21,13 @@
       },
       "access": "owner",
       "description": "Base de datos (solo lectura)"
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${ARI_FS_ROOT}"],
+      "guarded": true,
+      "access": "owner",
+      "description": "Archivos del computador (carpeta de trabajo del dueño)"
     }
   }
 }
