@@ -50,8 +50,10 @@ async def test_proponer_codigo_registered_only_for_owner_chat():
         raise AssertionError("not called")
 
     from ari.domain.tools.ari_permissions import allowed_ari_tools
-    owner = {t.name for t in await build_server(get_tools, allowed_ari_tools(True, "chat")).list_tools()}
-    user = {t.name for t in await build_server(get_tools, allowed_ari_tools(False, "chat")).list_tools()}
+    owner_server = build_server(get_tools, allowed_ari_tools(True, "chat"))
+    user_server = build_server(get_tools, allowed_ari_tools(False, "chat"))
+    owner = {t.name for t in await owner_server.list_tools()}
+    user = {t.name for t in await user_server.list_tools()}
     assert "proponer_codigo" in owner and "proponer_codigo" not in user
 
 

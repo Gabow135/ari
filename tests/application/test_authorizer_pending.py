@@ -27,3 +27,14 @@ def test_pending_store_lifecycle_and_busy_guard():
     assert s.is_busy("u1")
     s.clear_busy("u1")
     assert not s.is_busy("u1")
+
+
+def test_pending_store_planning_marker():
+    s = PendingStore()
+    assert not s.is_planning("u1")
+    assert s.mark_planning("u1") is True
+    assert s.is_planning("u1")
+    assert s.mark_planning("u1") is False    # already claimed
+    s.clear_planning("u1")
+    assert not s.is_planning("u1")
+    assert s.mark_planning("u1") is True     # free again after clear

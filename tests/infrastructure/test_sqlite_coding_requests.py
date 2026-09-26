@@ -36,6 +36,22 @@ async def test_finish(store):
     assert await store.status_of(999) is None
 
 
+async def test_reset_taken_marks_stranded_rows_failed_and_returns_them(store):
+    a = await store.add("42", "42", "agrega /ping", None)
+    b = await store.add("43", "43", "otra cosa", None)
+    await store.claim_pending()               # both become TAKEN
+    still_pending = await store.add("44", "44", "sin tomar", None)  # stays PENDING
+
+    stranded = await store.reset_taken()
+
+    assert sorted((r.id, r.instruction) for r in stranded) == [
+        (a, "agrega /ping"), (b, "otra cosa")]
+    assert await store.status_of(a) == FAILED
+    assert await store.status_of(b) == FAILED
+    assert await store.status_of(still_pending) != FAILED
+    assert await store.reset_taken() == []     # nothing left to reset
+
+
 async def test_claim_is_atomic_across_connections(tmp_path):
     db = str(tmp_path / "ari.db")
     first = await connect(db, embedding_dim=4)

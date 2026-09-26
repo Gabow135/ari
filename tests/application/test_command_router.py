@@ -1,5 +1,9 @@
 from ari.application.coding.command_router import (
-    parse_coding_command, is_affirmative, is_negative)
+    is_affirmative,
+    is_dale,
+    is_negative,
+    parse_coding_command,
+)
 
 
 def test_parse_code_command():
@@ -44,3 +48,22 @@ def test_code_at_botname_is_parsed():
 
 def test_fase2_at_botname_is_parsed():
     assert parse_coding_command("/fase2@AriBot fix it") == ("fix it", None)
+
+
+def test_is_dale_exact_case_insensitive_trimmed():
+    assert is_dale("dale")
+    assert is_dale("  Dale  ")
+    assert is_dale("DALE")
+
+
+def test_is_dale_strips_trailing_punctuation_and_emoji():
+    assert is_dale("dale!")
+    assert is_dale("dale.")
+    assert is_dale("dale 👍")
+
+
+def test_is_dale_rejects_other_affirmatives_and_variants():
+    assert not is_dale("sí")
+    assert not is_dale("ok")
+    assert not is_dale("dale total")
+    assert not is_dale("dale pero esperá")

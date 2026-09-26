@@ -212,6 +212,7 @@ async def test_plan_and_exec_argv_are_isolated(monkeypatch):
     coder = ClaudeCodeCoder(claude_bin="claude")
     await coder._default_plan_runner("x", ".", "m")
     await coder._default_exec_runner("x", ".", "m")
+    assert len(seen) == 2
     for argv in seen:
         assert "--strict-mcp-config" in argv
         assert argv[argv.index("--setting-sources") + 1] == "project"
