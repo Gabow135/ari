@@ -12,9 +12,10 @@ class MonitoredLLM:
         self._llm, self._threshold, self._fails = llm, threshold, 0
         self.listener = None  # SystemNotices, bound once it exists
 
-    async def complete(self, system, messages, max_tokens: int = 1024) -> str:
+    async def complete(self, system, messages, max_tokens: int = 1024, toolset=None) -> str:
+        extra = {"toolset": toolset} if toolset is not None else {}
         try:
-            reply = await self._llm.complete(system, messages, max_tokens=max_tokens)
+            reply = await self._llm.complete(system, messages, max_tokens=max_tokens, **extra)
         except Exception as exc:
             self._fails += 1
             if self._fails == self._threshold:

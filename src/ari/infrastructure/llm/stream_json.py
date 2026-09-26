@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 
+from ari.domain.ports.llm_port import LLMTimeoutError
 from ari.domain.ports.progress_port import TEXT, THINKING, TOOL, ProgressEvent, emit_progress
 
 # Flags that make `claude -p` print one JSON event per line as it works.
@@ -79,7 +80,7 @@ async def run_streaming(argv: list[str], stdin: bytes | None = None,
     except TimeoutError:
         proc.kill()
         await proc.wait()
-        raise RuntimeError(f"claude timed out after {timeout}s") from None
+        raise LLMTimeoutError(f"claude timed out after {timeout}s") from None
     if proc.returncode != 0:
         raise RuntimeError(f"claude CLI failed (exit {proc.returncode}): "
                            f"{err.decode(errors='replace')[:500]}")

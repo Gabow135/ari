@@ -6,9 +6,11 @@ class FakeLLM:
     def __init__(self, reply: str = "ok"):
         self.reply = reply
         self.calls: list[tuple[str, list[Message]]] = []
+        self.toolsets: list = []
 
-    async def complete(self, system, messages, max_tokens=1024) -> str:
+    async def complete(self, system, messages, max_tokens=1024, toolset=None) -> str:
         self.calls.append((system, list(messages)))
+        self.toolsets.append(toolset)
         return self.reply
 
 

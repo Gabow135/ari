@@ -97,3 +97,9 @@ async def test_run_streaming_passes_env_to_cli():
     env = {**os.environ, "ARI_PROBE": "visto"}
     raw = await run_streaming([sys.executable, "-c", script], env=env)
     assert json.loads(raw)["result"] == "visto"
+
+
+async def test_timeout_raises_llm_timeout_error():
+    from ari.domain.ports.llm_port import LLMTimeoutError
+    with pytest.raises(LLMTimeoutError):
+        await run_streaming([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)

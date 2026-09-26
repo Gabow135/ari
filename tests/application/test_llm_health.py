@@ -45,3 +45,17 @@ async def test_errors_still_propagate_without_listener():
     llm = MonitoredLLM(FlakyLLM([False]))
     with pytest.raises(RuntimeError):
         await llm.complete("s", [])
+
+
+async def test_toolset_is_forwarded():
+    seen = []
+
+    class Inner:
+        async def complete(self, system, messages, max_tokens=1024, toolset=None):
+            seen.append(toolset)
+            return "ok"
+
+    llm = MonitoredLLM(Inner())
+    await llm.complete("s", [], toolset="T")
+    await llm.complete("s", [])
+    assert seen == ["T", None]
