@@ -5,6 +5,7 @@ import logging
 import socket
 import threading
 import time
+from collections.abc import Callable
 
 from ari.infrastructure.vault_web.cert import ensure_cert
 from ari.infrastructure.vault_web.link_store import VaultLinkStore
@@ -28,7 +29,8 @@ def detect_lan_ip() -> str:
 
 class VaultWebMaintainer:
     def __init__(self, vault, servers_json: str, cert_dir: str, port: int, bind: str,
-                 ttl_minutes: int, clock=time.monotonic, extra_names=None):
+                 ttl_minutes: int, clock=time.monotonic,
+                 extra_names: Callable[[], list[str]] | None = None):
         self._vault = vault
         self._servers_json = servers_json
         self._cert_dir, self._port, self._bind = cert_dir, port, bind
@@ -38,10 +40,12 @@ class VaultWebMaintainer:
         self._lock = threading.Lock()
         self._extra_names = extra_names
 
+    _NEVER_WRITABLE = {"ARI_FS_ROOT"}
+
     def _writable_names(self) -> list[str]:
         names = configurable_secret_names(self._servers_json)
         if self._extra_names is not None:
-            names = sorted(set(names) | set(self._extra_names()))
+            names = sorted((set(names) | set(self._extra_names())) - self._NEVER_WRITABLE)
         return names
 
     def new_link(self) -> str:
