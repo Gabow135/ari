@@ -1,6 +1,7 @@
 import logging
 
 from ari.domain.ports.gateway_port import IncomingMessage
+from ari.domain.skills.models import Attachment, RawInbound
 
 log = logging.getLogger("ari.telegram")
 TELEGRAM_LIMIT = 4096
@@ -24,3 +25,21 @@ class TelegramAdapter:
     @staticmethod
     def split_text(text: str, limit: int = TELEGRAM_LIMIT) -> list[str]:
         return [text[i:i + limit] for i in range(0, len(text), limit)] or [""]
+
+
+async def voice_to_text(update, download, manager, is_owner: bool) -> str | None:
+    """Extract a voice/audio attachment, download its bytes, and transcribe it through
+    the skill manager's inbound transforms. Returns the text, or None when there is no
+    audio media or no skill handled it. `download` is an async callable(media)->bytes."""
+    msg = getattr(update, "effective_message", None) or getattr(update, "message", None)
+    if msg is None:
+        return None
+    media = getattr(msg, "voice", None) or getattr(msg, "audio", None)
+    if media is None:
+        return None
+    data = await download(media)
+    raw = RawInbound(
+        user_id=str(msg.from_user.id), chat_id=str(msg.chat_id), text=None,
+        attachment=Attachment(kind="voice", mime=getattr(media, "mime_type", None) or "audio/ogg",
+                              data=bytes(data), duration=getattr(media, "duration", None)))
+    return await manager.run_inbound(raw, is_owner)
