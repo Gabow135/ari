@@ -13,6 +13,8 @@ _background_tasks: set = set()
 
 from ari.application.access.gate import ADMIN_COMMANDS, AccessGate, deliver
 from ari.application.admin.lifecycle import LIFECYCLE_COMMANDS, RESTART, Lifecycle
+from ari.application.skills.skill_admin import SkillAdmin
+from ari.application.skills.skill_manager import SkillManager
 from ari.application.coding.authorizer import Authorizer
 from ari.application.coding.confirm_coding import ConfirmCoding
 from ari.application.coding.flow import CodingDeps, route_message
@@ -32,7 +34,8 @@ from ari.application.text_format import truncate
 from ari.application.tools.tool_policy import AriServerSpec, ToolPolicy
 from ari.config.settings import Settings
 from ari.domain.agent.agent_service import AgentService
-from ari.domain.ports.gateway_port import IncomingMessage
+from ari.domain.ports.gateway_port import IncomingMessage, OutgoingMessage
+from ari.domain.skills.models import InboundContext
 from ari.domain.schedule.quiet_hours import parse_window
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.claude_env import claude_cli_env
@@ -40,7 +43,7 @@ from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
 from ari.infrastructure.coder.workspace import Workspace
 from ari.infrastructure.gateway.bot_commands import register_commands
 from ari.infrastructure.gateway.progress_message import ProgressMessage
-from ari.infrastructure.gateway.telegram_adapter import TelegramAdapter
+from ari.infrastructure.gateway.telegram_adapter import TelegramAdapter, voice_to_text
 from ari.infrastructure.llm.claude_code_adapter import ClaudeCodeCliAdapter
 from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
@@ -97,6 +100,7 @@ class Components:
     turn_log: SqliteTurnLog
     turn_config_writer: TurnConfigWriter
     vault_web: VaultWebMaintainer
+    skills: "SkillManager"
 
 
 def cli_env(settings: Settings) -> dict | None:
@@ -147,11 +151,13 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         turn_log=turn_log,
     )
     cert_dir = os.path.dirname(os.path.expanduser(settings.vault_path))
+    skills = SkillManager(settings.skills_dir, vault)
     vault_web = VaultWebMaintainer(
         vault, settings.mcp_config, cert_dir=cert_dir, port=settings.vault_web_port,
-        bind=settings.vault_web_bind, ttl_minutes=settings.vault_web_ttl_minutes)
+        bind=settings.vault_web_bind, ttl_minutes=settings.vault_web_ttl_minutes,
+        extra_names=skills.required_secret_names)
     return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul, tools,
-                      turn_log, turn_config_writer, vault_web)
+                      turn_log, turn_config_writer, vault_web, skills)
 
 
 def main() -> None:
@@ -170,6 +176,8 @@ def main() -> None:
         app.bot_data["actions"] = c.actions
         app.bot_data["tools"] = c.tools
         app.bot_data["vault_web"] = c.vault_web
+        app.bot_data["skills"] = c.skills
+        app.bot_data["skill_admin"] = SkillAdmin(c.skills, c.vault_web)
         for line in c.tools.status_text().splitlines():
             logging.info("conexión: %s", line)
         access_store = SqliteAccessStore(c.conn)
@@ -328,7 +336,7 @@ def main() -> None:
         await deliver(result, lambda t: _reply_parts(msg, t), _send)
         return result.allowed
 
-    async def _dispatch(update, text: str) -> None:
+    async def _dispatch(update, text: str, from_voice: bool = False) -> None:
         """Shared dispatch: builds per-message deps and routes the text."""
         msg = update.effective_message
         if msg is None or msg.from_user is None:
@@ -390,6 +398,20 @@ def main() -> None:
         if reply is not None:
             for part in TelegramAdapter.split_text(reply):
                 await msg.reply_text(part)
+            if from_voice:
+                origin = InboundContext(came_from_voice=True, chat_id=str(msg.chat_id), user_id=user_id)
+                is_owner = app.bot_data["gate"].is_owner(user_id)
+                deliveries = await app.bot_data["skills"].run_outbound(
+                    OutgoingMessage(chat_id=str(msg.chat_id), text=reply), origin, is_owner)
+                for d in deliveries:
+                    if d.kind == "voice" and d.data:
+                        try:
+                            await app.bot.send_voice(chat_id=int(msg.chat_id), voice=bytes(d.data))
+                        except Exception:
+                            try:
+                                await app.bot.send_audio(chat_id=int(msg.chat_id), audio=bytes(d.data))
+                            except Exception as exc:
+                                logging.warning("voice reply failed for %s: %s", msg.chat_id, exc)
 
     async def _on_command(update, _context) -> None:
         """Handle /code and /fase2 slash commands."""
@@ -400,11 +422,29 @@ def main() -> None:
         await _dispatch(update, msg.text)
 
     async def _on_message(update, _context) -> None:
-        """Handle plain-text messages (chat, dale/no confirmations)."""
+        """Handle plain-text messages (chat, dale/no confirmations) and voice notes."""
         inc = TelegramAdapter.to_incoming(update)
-        if inc is None:
+        if inc is not None:
+            await _dispatch(update, inc.text)
             return
-        await _dispatch(update, inc.text)
+        msg = update.effective_message
+        if msg is None or msg.from_user is None:
+            return
+        if not (getattr(msg, "voice", None) or getattr(msg, "audio", None)):
+            return
+        if not await _admit(msg):
+            return
+        is_owner = app.bot_data["gate"].is_owner(str(msg.from_user.id))
+
+        async def _download(media):
+            f = await media.get_file()
+            return await f.download_as_bytearray()
+
+        text = await voice_to_text(update, _download, app.bot_data["skills"], is_owner)
+        if not text:
+            await msg.reply_text("No pude procesar ese audio (¿muy largo o error de transcripción?). ¿Lo escribís?")
+            return
+        await _dispatch(update, text, from_voice=True)
 
     async def _on_start(update, _context) -> None:
         """/start: greet approved users; hand a pairing code to everyone else."""
@@ -450,6 +490,44 @@ def main() -> None:
             msg, f"Cargá tus credenciales acá (vence pronto; el navegador va a advertir "
                  f"por el certificado, aceptá una vez):\n{link}")
 
+    async def _on_skills(update, _context) -> None:
+        """/skills (owner only): list all skills and their status."""
+        msg = update.effective_message
+        if msg is None or msg.from_user is None or not await _admit(msg):
+            return
+        if not app.bot_data["gate"].is_owner(str(msg.from_user.id)):
+            await msg.reply_text("Ese comando es solo para el dueño.")
+            return
+        await _reply_parts(msg, app.bot_data["skill_admin"].list_text())
+
+    async def _on_skill_on(update, context) -> None:
+        """/skill_on <name> (owner only): enable a skill."""
+        msg = update.effective_message
+        if msg is None or msg.from_user is None or not await _admit(msg):
+            return
+        if not app.bot_data["gate"].is_owner(str(msg.from_user.id)):
+            await msg.reply_text("Ese comando es solo para el dueño.")
+            return
+        name = " ".join(context.args).strip()
+        if not name:
+            await msg.reply_text("Uso: /skill_on <nombre>")
+            return
+        await _reply_parts(msg, app.bot_data["skill_admin"].enable(name))
+
+    async def _on_skill_off(update, context) -> None:
+        """/skill_off <name> (owner only): disable a skill."""
+        msg = update.effective_message
+        if msg is None or msg.from_user is None or not await _admit(msg):
+            return
+        if not app.bot_data["gate"].is_owner(str(msg.from_user.id)):
+            await msg.reply_text("Ese comando es solo para el dueño.")
+            return
+        name = " ".join(context.args).strip()
+        if not name:
+            await msg.reply_text("Uso: /skill_off <nombre>")
+            return
+        await _reply_parts(msg, app.bot_data["skill_admin"].disable(name))
+
     async def _on_access_admin(update, _context) -> None:
         """Owner-only /aprobar, /revocar, /accesos."""
         msg = update.effective_message
@@ -471,10 +549,14 @@ def main() -> None:
     app.add_handler(CommandHandler("recordatorios", _on_reminders))
     app.add_handler(CommandHandler("conexiones", _on_connections))
     app.add_handler(CommandHandler("vault", _on_vault))
+    app.add_handler(CommandHandler("skills", _on_skills))
+    app.add_handler(CommandHandler("skill_on", _on_skill_on))
+    app.add_handler(CommandHandler("skill_off", _on_skill_off))
     app.add_handler(CommandHandler(list(ADMIN_COMMANDS), _on_access_admin))
     app.add_handler(CommandHandler(list(LIFECYCLE_COMMANDS), _on_lifecycle))
     app.add_handler(CommandHandler(["code", "fase2"], _on_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
+    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, _on_message))
     app.run_polling()
 
     # run_polling returned: shutdown (incl. closing the DB) is complete.
