@@ -46,6 +46,21 @@ CREATE TABLE IF NOT EXISTS coding_requests (
   instruction TEXT NOT NULL, target TEXT, status TEXT NOT NULL,
   created_at TEXT NOT NULL, detail TEXT);
 CREATE INDEX IF NOT EXISTS idx_coding_requests_status ON coding_requests(status, id);
+
+CREATE TABLE IF NOT EXISTS credential_requests (
+  id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, chat_id TEXT NOT NULL,
+  requested TEXT NOT NULL, status TEXT NOT NULL,
+  created_at TEXT NOT NULL, detail TEXT);
+CREATE INDEX IF NOT EXISTS idx_credential_requests_status ON credential_requests(status, id);
+
+CREATE TABLE IF NOT EXISTS missions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL, chat_id TEXT NOT NULL,
+  instruction TEXT NOT NULL, status TEXT NOT NULL,
+  failures INTEGER NOT NULL DEFAULT 0, result TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_missions_status ON missions(status, id);
+CREATE INDEX IF NOT EXISTS idx_missions_user ON missions(user_id, status);
 """
 
 
