@@ -28,7 +28,7 @@ def detect_lan_ip() -> str:
 
 class VaultWebMaintainer:
     def __init__(self, vault, servers_json: str, cert_dir: str, port: int, bind: str,
-                 ttl_minutes: int, clock=time.monotonic):
+                 ttl_minutes: int, clock=time.monotonic, extra_names=None):
         self._vault = vault
         self._servers_json = servers_json
         self._cert_dir, self._port, self._bind = cert_dir, port, bind
@@ -36,6 +36,13 @@ class VaultWebMaintainer:
         self._server: VaultWebServer | None = None
         self._lan_ip: str | None = None
         self._lock = threading.Lock()
+        self._extra_names = extra_names
+
+    def _writable_names(self) -> list[str]:
+        names = configurable_secret_names(self._servers_json)
+        if self._extra_names is not None:
+            names = sorted(set(names) | set(self._extra_names()))
+        return names
 
     def new_link(self) -> str:
         with self._lock:
@@ -43,7 +50,7 @@ class VaultWebMaintainer:
                 lan_ip = detect_lan_ip()
                 self._lan_ip = lan_ip
                 cert, key = ensure_cert(self._cert_dir, lan_ip)
-                names = configurable_secret_names(self._servers_json)
+                names = self._writable_names()
                 self._server = VaultWebServer(self._bind, self._port, cert, key,
                                               self._vault, self._store, names)
                 self._server.start()
