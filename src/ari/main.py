@@ -151,7 +151,7 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         vault, settings.mcp_config, cert_dir=cert_dir, port=settings.vault_web_port,
         bind=settings.vault_web_bind, ttl_minutes=settings.vault_web_ttl_minutes)
     return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul, tools,
-                      vault_web)
+                      turn_log, turn_config_writer, vault_web)
 
 
 def main() -> None:
