@@ -1,0 +1,17 @@
+{
+  "name": "groq_audio",
+  "version": "0.1.0",
+  "enabled": false,
+  "owner_only": true,
+  "description": "Transcribe voice notes and reply with voice via Groq.",
+  "entrypoint": "skill.py",
+  "factory": "build_skill",
+  "required_secrets": ["GROQ_API_KEY"],
+  "hooks": ["inbound_transform", "outbound_transform"],
+  "config": {
+    "stt_model": "whisper-large-v3-turbo",
+    "tts_model": "canopylabs/orpheus-v1-english",
+    "tts_voice": "troy",
+    "reply_with_voice": true
+  }
+}
