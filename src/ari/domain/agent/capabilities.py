@@ -92,6 +92,18 @@ CAPABILITIES: list[Capability] = [
         command="stop", menu="Apagar Ari", owner_only=True,
         summary="Apagarte. Pide confirmación con «dale»; para volver hay que "
                 "levantarte desde la máquina."),
+    Capability(
+        command="skills", menu="Ver skills", owner_only=True,
+        summary="Lista los skills instalados y su estado (activo, falta credencial, etc.).",
+        usage="/skills"),
+    Capability(
+        command="skill_on", menu="Activar skill", owner_only=True,
+        summary="Activa un skill; si le falta una credencial, Ari te manda un link seguro para cargarla.",
+        usage="/skill_on <nombre>"),
+    Capability(
+        command="skill_off", menu="Desactivar skill", owner_only=True,
+        summary="Desactiva un skill sin reiniciar a Ari.",
+        usage="/skill_off <nombre>"),
 ]
 
 # What Ari can NOT do yet — so it never promises it, and can propose how to get it.
