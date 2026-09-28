@@ -167,7 +167,11 @@ class SkillManager:
         for l in self._active(is_owner):
             if not hasattr(l.instance, "on_inbound"):
                 continue
-            out = await l.instance.on_inbound(raw, self._ctx_for(l.manifest))
+            try:
+                out = await l.instance.on_inbound(raw, self._ctx_for(l.manifest))
+            except Exception:
+                log.exception("skill %s on_inbound raised unexpectedly", l.status.name)
+                continue
             if out is not None:
                 return out
         return None
