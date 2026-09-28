@@ -110,4 +110,11 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         """Cancela una misión pendiente o en curso por su #número."""
         return await (await get_tools()).cancelar_mision(id)
 
+    @tool("pedir_credenciales")
+    async def pedir_credenciales(nombres: str) -> str:
+        """(Solo el creador) Cuando tu creador quiera darte una credencial, API o
+        contraseña (p. ej. "quiero pasarte el api de groq"), prepara un link seguro para
+        que la cargue sin escribirla en el chat. nombres: qué credencial quiere cargar."""
+        return await (await get_tools()).pedir_credenciales(nombres)
+
     return server

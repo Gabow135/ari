@@ -45,12 +45,13 @@ class Actor:
 
 class AriTools:
     def __init__(self, actor: Actor, *, schedule, memory, turn_log, tz, max_items: int,
-                 clock, gate=None, access=None, coding=None, missions=None):
+                 clock, gate=None, access=None, coding=None, missions=None, credentials=None):
         self._a, self._schedule, self._memory, self._log = actor, schedule, memory, turn_log
         self._tz, self._max, self._clock = tz, max_items, clock
         self._gate, self._access = gate, access
         self._coding = coding  # SqliteCodingRequests | None
         self._missions = missions  # SqliteMissions | None
+        self._credentials = credentials  # SqliteCredentialRequests | None
 
     def _allowed(self, tool: str) -> bool:
         if tool in allowed_ari_tools(self._a.is_owner, self._a.context):
@@ -259,6 +260,17 @@ class AriTools:
         return await self._receipt(f"🗑️ Cancelada misión #{mid}: {truncate(mission.instruction)}")
 
     # ---- proactive code ----------------------------------------------------
+
+    async def pedir_credenciales(self, nombres: str) -> str:
+        if not self._allowed("pedir_credenciales"):
+            return DENIED
+        text = (nombres or "").strip()
+        if not text or len(text) > 500:
+            return "No pude prepararlo: decime qué credencial querés cargar (1–500 caracteres)."
+        if self._credentials is None:
+            return "No pude prepararlo: la cola de credenciales no está disponible."
+        await self._credentials.add(self._a.user_id, self._a.chat_id, text)
+        return await self._receipt(f"🔑 Te preparo el link seguro para: {truncate(text)}")
 
     async def proponer_codigo(self, instruccion: str, carpeta: str | None = None) -> str:
         if not self._allowed("proponer_codigo"):
