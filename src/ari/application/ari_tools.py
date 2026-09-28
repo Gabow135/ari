@@ -45,11 +45,12 @@ class Actor:
 
 class AriTools:
     def __init__(self, actor: Actor, *, schedule, memory, turn_log, tz, max_items: int,
-                 clock, gate=None, access=None, coding=None):
+                 clock, gate=None, access=None, coding=None, missions=None):
         self._a, self._schedule, self._memory, self._log = actor, schedule, memory, turn_log
         self._tz, self._max, self._clock = tz, max_items, clock
         self._gate, self._access = gate, access
         self._coding = coding  # SqliteCodingRequests | None
+        self._missions = missions  # SqliteMissions | None
 
     def _allowed(self, tool: str) -> bool:
         if tool in allowed_ari_tools(self._a.is_owner, self._a.context):
@@ -208,6 +209,54 @@ class AriTools:
         signature = (self._a.name or "").strip() or "tu contacto"
         await self._log.outbox_add(rec.user_id, f"📨 De {signature} (vía Ari): {texto}")
         return await self._receipt(f"📨 Enviado a {_who(rec)}")
+
+    # ---- missions (background tasks) -------------------------------------
+
+    async def asignar_mision(self, instruccion: str) -> str:
+        if not self._allowed("asignar_mision"):
+            return DENIED
+        instruccion = (instruccion or "").strip()
+        if not instruccion or len(instruccion) > 2000:
+            return "No pude crearla: la instrucción debe tener entre 1 y 2000 caracteres."
+        if self._missions is None:
+            return "No pude crearla: el sistema de misiones no está disponible."
+        mid = await self._missions.add(self._a.user_id, self._a.chat_id, instruccion)
+        return await self._receipt(f"🎯 Misión #{mid} creada: {truncate(instruccion)}")
+
+    async def ver_misiones(self) -> str:
+        if not self._allowed("ver_misiones"):
+            return DENIED
+        if self._missions is None:
+            return "No pude verlas: el sistema de misiones no está disponible."
+        items = await self._missions.list_for_user(self._a.user_id)
+        if not items:
+            return "No tienes misiones activas."
+        _icons = {"pending": "⏳", "running": "🔄", "done": "✅",
+                  "failed": "❌", "paused": "⚠️", "cancelled": "🗑️"}
+        lines = []
+        for m in items:
+            icon = _icons.get(m.status, "❓")
+            lines.append(f"{icon} #{m.id} [{m.status}]: {truncate(m.instruction, 80)}")
+            if m.result and m.status in ("done", "paused", "failed"):
+                lines.append(f"   → {truncate(m.result, 120)}")
+        return "\n".join(lines)
+
+    async def cancelar_mision(self, id: int) -> str:
+        if not self._allowed("cancelar_mision"):
+            return DENIED
+        if self._missions is None:
+            return "No pude cancelarla: el sistema de misiones no está disponible."
+        try:
+            mid = int(id)
+        except (ValueError, TypeError):
+            return f"No encontré la misión #{id}."
+        mission = await self._missions.get(mid)
+        if mission is None or mission.user_id != self._a.user_id:
+            return f"No encontré la misión #{mid}."
+        if mission.status in ("done", "failed", "cancelled"):
+            return f"La misión #{mid} ya está en estado {mission.status}."
+        await self._missions.set_status(mid, "cancelled")
+        return await self._receipt(f"🗑️ Cancelada misión #{mid}: {truncate(mission.instruction)}")
 
     # ---- proactive code ----------------------------------------------------
 

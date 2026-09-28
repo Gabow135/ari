@@ -9,6 +9,7 @@ from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import open_existing
 from ari.infrastructure.persistence.sqlite_coding_requests import SqliteCodingRequests
+from ari.infrastructure.persistence.sqlite_missions import SqliteMissions
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 from ari.mcp_server.server import actor_from_env, build_server
@@ -31,7 +32,8 @@ async def _get_tools() -> AriTools:
             max_items=int(env.get("ARI_MAX_ITEMS", "20")),
             clock=lambda: datetime.now(timezone.utc),
             gate=AccessGate(access, owners, on_revoke=schedule.cancel_user), access=access,
-            coding=SqliteCodingRequests(conn))
+            coding=SqliteCodingRequests(conn),
+            missions=SqliteMissions(conn))
     return _tools
 
 

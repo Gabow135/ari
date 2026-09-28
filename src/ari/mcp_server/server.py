@@ -92,4 +92,22 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         (por defecto, el repositorio de Ari)."""
         return await (await get_tools()).proponer_codigo(instruccion, carpeta)
 
+    @tool("asignar_mision")
+    async def asignar_mision(instruccion: str) -> str:
+        """Crea una misión de fondo: Ari la ejecuta de forma autónoma, se demore lo que
+        se demore, y avisa al usuario cuando termina. Úsala cuando el usuario pide algo
+        que puede tardar: buscar información, analizar datos, preparar un resumen largo.
+        La misión se reintenta hasta 3 veces si falla."""
+        return await (await get_tools()).asignar_mision(instruccion)
+
+    @tool("ver_misiones")
+    async def ver_misiones() -> str:
+        """Muestra el estado de las misiones del usuario: pendientes, en curso, pausadas."""
+        return await (await get_tools()).ver_misiones()
+
+    @tool("cancelar_mision")
+    async def cancelar_mision(id: int) -> str:
+        """Cancela una misión pendiente o en curso por su #número."""
+        return await (await get_tools()).cancelar_mision(id)
+
     return server

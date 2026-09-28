@@ -21,6 +21,7 @@ from ari.application.coding.flow import CodingDeps, route_message
 from ari.application.coding.pending_store import PendingStore
 from ari.application.coding.request_coding import RequestCoding
 from ari.application.coding.request_runner import CodingRequestRunner
+from ari.application.missions.run_pending_missions import MissionRunner
 from ari.application.handle_message import HandleMessage
 from ari.application.memory_maintainer import MemoryMaintainer
 from ari.application.outbox import OutboxFlusher
@@ -49,6 +50,7 @@ from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import connect
 from ari.infrastructure.persistence.sqlite_coding_requests import SqliteCodingRequests
+from ari.infrastructure.persistence.sqlite_missions import SqliteMissions
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 from ari.infrastructure.soul.soul_loader import SoulLoader
@@ -285,11 +287,17 @@ def main() -> None:
             await send(stranded.chat_id,
                        f"Se interrumpió la preparación del plan: {truncate(stranded.instruction)}")
 
+        missions = SqliteMissions(c.conn)
+        stranded_missions = await missions.reset_running()
+        if stranded_missions:
+            log.info("reset %d stranded mission(s) to pending", len(stranded_missions))
+        mission_runner = MissionRunner(missions, c.handler, send, spawn)
+
         async def vault_web_sweep() -> None:
             c.vault_web.sweep_and_maybe_stop()
 
         scheduler = Scheduler([due, notices.tick, heartbeat, flusher, coding_runner,
-                               vault_web_sweep])
+                               mission_runner, vault_web_sweep])
         scheduler.start()
         app.bot_data["scheduler"] = scheduler
 
@@ -363,13 +371,15 @@ def main() -> None:
                 await msg.reply_text(part)
 
         async def chat(chat_text: str, uid: str) -> str:
-            inc = TelegramAdapter.to_incoming(update)
-            if inc is None:
+            # Don't use TelegramAdapter.to_incoming here — it returns None for
+            # voice/audio updates (msg.text is None). Build IncomingMessage directly
+            # from msg so voice transcripts are dispatched correctly too.
+            if msg is None or msg.from_user is None:
                 return ""
-            # Build a fresh IncomingMessage reflecting the actual text for this call.
+            user = msg.from_user
             scoped_inc = IncomingMessage(
-                user_id=inc.user_id, chat_id=inc.chat_id, text=chat_text,
-                display_name=inc.display_name)
+                user_id=str(user.id), chat_id=str(msg.chat_id), text=chat_text,
+                display_name=getattr(user, "first_name", None) or getattr(user, "username", None) or "")
             out = await message_handler(scoped_inc)
             return out.text
 
@@ -440,9 +450,14 @@ def main() -> None:
             f = await media.get_file()
             return await f.download_as_bytearray()
 
-        text = await voice_to_text(update, _download, app.bot_data["skills"], is_owner)
+        try:
+            text = await voice_to_text(update, _download, app.bot_data["skills"], is_owner)
+        except Exception:
+            log.exception("voice_to_text raised for user %s", msg.from_user.id)
+            await msg.reply_text("Hubo un error procesando el audio. ¿Lo escribís?")
+            return
         if not text:
-            await msg.reply_text("No pude procesar ese audio (¿muy largo o error de transcripción?). ¿Lo escribís?")
+            await msg.reply_text("No pude transcribir ese audio (¿muy largo o error de API?). ¿Lo escribís?")
             return
         await _dispatch(update, text, from_voice=True)
 
