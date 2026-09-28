@@ -35,11 +35,25 @@ class ToolPolicy:
         return Toolset(builtin, (*builtin, *(f"mcp__{n}" for n in names)), path)
 
     def view(self, user_id: str) -> ToolsView:
-        servers = self._registry.descriptions(self._is_owner(user_id))
+        is_owner = self._is_owner(user_id)
+        servers = self._registry.descriptions(is_owner)
+        degraded = self._registry.degraded_for(is_owner)
         lines = ["## Tus herramientas y conexiones",
                  "- 🌐 web: buscar y leer páginas."]
         lines += [f"- {server_icon(n)} {n}: {d}" for n, d in servers]
-        return ToolsView("\n".join(lines), has_web=True, has_mcp=bool(servers))
+        if degraded:
+            lines.append("\n### Conexiones degradadas (configuradas pero inactivas)")
+            for n, d, detail in degraded:
+                lines.append(
+                    f"- {server_icon(n)} {n}: {d} — ⚠️ {detail}"
+                    " (tu creador puede activarla con /vault)"
+                )
+        return ToolsView(
+            "\n".join(lines),
+            has_web=True,
+            has_mcp=bool(servers),
+            has_degraded=bool(degraded),
+        )
 
     def status_text(self) -> str:
         lines = []

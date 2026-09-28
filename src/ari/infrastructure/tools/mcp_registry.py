@@ -81,6 +81,19 @@ class McpRegistry:
         self._refresh()
         return list(self._status)
 
+    def degraded_for(self, is_owner: bool) -> list[tuple[str, str, str]]:
+        """Servers configured but not usable: (name, description, detail).
+
+        Owners see every degraded server; non-owners only see those with
+        access == 'users' (they can't fix the others anyway).
+        """
+        self._refresh()
+        return [
+            (s.name, s.description, s.detail)
+            for s in self._status
+            if not s.ok and (is_owner or s.access == USERS)
+        ]
+
     # ---- internals --------------------------------------------------------
 
     def _candidate_names(self, is_owner: bool) -> tuple[str, ...]:

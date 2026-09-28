@@ -117,14 +117,20 @@ _NO_MCP = ("Todavía no tienes conexiones MCP ni integraciones (correo, calendar
 _ONLY_LISTED = ("Solo tienes las conexiones listadas en «Tus herramientas y conexiones». "
                 "Una conexión nueva solo existe cuando tu creador la agrega a Ari "
                 "(mcp/servers.json); autorizar una cuenta en otra app NO te da acceso.")
+_DEGRADED_NOTE = ("Tienes conexiones configuradas pero inactivas (ver sección "
+                  "«Conexiones degradadas» en «Tus herramientas»). Puedes mencionarlas "
+                  "proactivamente y guiar a tu creador a activarlas con /vault o "
+                  "revisando la configuración. No las uses hasta que estén activas.")
 
 
-def limitations(has_web: bool, has_mcp: bool) -> list[str]:
+def limitations(has_web: bool, has_mcp: bool, has_degraded: bool = False) -> list[str]:
     """What Ari can NOT do, given the tools of the current conversation."""
     out = []
     if not has_web:
         out.append(_NO_TOOLS)
     out.append(_ONLY_LISTED if has_mcp else _NO_MCP)
+    if has_degraded:
+        out.append(_DEGRADED_NOTE)
     return out
 
 
@@ -140,11 +146,12 @@ def menu_commands(owner: bool) -> list[tuple[str, str]]:
     return [(c.command, c.menu) for c in _visible(owner) if c.command]
 
 
-def render_capabilities(is_owner: bool, has_web: bool = False, has_mcp: bool = False) -> str:
+def render_capabilities(is_owner: bool, has_web: bool = False, has_mcp: bool = False,
+                        has_degraded: bool = False) -> str:
     lines = ["## Tus capacidades"]
     for cap in _visible(is_owner):
         head = f"- /{cap.command}: " if cap.command else "- "
         lines.append(head + cap.summary + (f" Uso: {cap.usage}" if cap.usage else ""))
     lines += ["", "## Limitaciones actuales (no las prometas; propone cómo resolverlas)"]
-    lines += [f"- {limit}" for limit in limitations(has_web, has_mcp)]
+    lines += [f"- {limit}" for limit in limitations(has_web, has_mcp, has_degraded)]
     return "\n".join(lines)

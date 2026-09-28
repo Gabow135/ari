@@ -26,7 +26,8 @@ class AgentService:
                  _WITH_OWNER if is_owner else _WITH_USER,
                  render_capabilities(is_owner,
                                      has_web=bool(tools and tools.has_web),
-                                     has_mcp=bool(tools and tools.has_mcp))]
+                                     has_mcp=bool(tools and tools.has_mcp),
+                                     has_degraded=bool(tools and tools.has_degraded))]
         if tools:
             parts.append(tools.text)
         if extra:

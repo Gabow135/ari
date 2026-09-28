@@ -23,6 +23,7 @@ class ToolsView:
     text: str
     has_web: bool
     has_mcp: bool
+    has_degraded: bool = False
 
 
 @dataclass(frozen=True)
