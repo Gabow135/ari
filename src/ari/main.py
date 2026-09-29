@@ -21,6 +21,8 @@ from ari.application.coding.flow import CodingDeps, route_message
 from ari.application.coding.pending_store import PendingStore
 from ari.application.coding.request_coding import RequestCoding
 from ari.application.coding.request_runner import CodingRequestRunner
+from ari.application.credentials.request_runner import CredentialRequestRunner
+from ari.application.credentials.needs import missing_inbound_secrets
 from ari.application.missions.run_pending_missions import MissionRunner
 from ari.application.handle_message import HandleMessage
 from ari.application.memory_maintainer import MemoryMaintainer
@@ -50,6 +52,7 @@ from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import connect
 from ari.infrastructure.persistence.sqlite_coding_requests import SqliteCodingRequests
+from ari.infrastructure.persistence.sqlite_credential_requests import SqliteCredentialRequests
 from ari.infrastructure.persistence.sqlite_missions import SqliteMissions
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
@@ -243,6 +246,8 @@ def main() -> None:
         coding_runner = CodingRequestRunner(
             coding_requests, request_coding, store, send, spawn, _utcnow,
             progress=lambda chat_id: ProgressMessage(app.bot, int(chat_id)))
+        credential_requests = SqliteCredentialRequests(c.conn)
+        credential_runner = CredentialRequestRunner(credential_requests, c.vault_web, send, _utcnow)
 
         async def after_turn() -> None:
             # Each step is guarded on its own so a failure in one (e.g. the
@@ -255,6 +260,10 @@ def main() -> None:
                 await coding_runner()
             except Exception:
                 log.exception("coding request runner failed")
+            try:
+                await credential_runner()
+            except Exception:
+                log.exception("credential request runner failed")
 
         c.handler._after_turn = after_turn  # flush + proposed code, right after each turn
 
@@ -286,6 +295,8 @@ def main() -> None:
         for stranded in await coding_requests.reset_taken():  # plans interrupted likewise
             await send(stranded.chat_id,
                        f"Se interrumpió la preparación del plan: {truncate(stranded.instruction)}")
+        for r in await credential_requests.reset_taken():
+            await send(r.chat_id, "Retomo tu pedido de credencial…")
 
         missions = SqliteMissions(c.conn)
         stranded_missions = await missions.reset_running()
@@ -297,7 +308,7 @@ def main() -> None:
             c.vault_web.sweep_and_maybe_stop()
 
         scheduler = Scheduler([due, notices.tick, heartbeat, flusher, coding_runner,
-                               mission_runner, vault_web_sweep])
+                               mission_runner, credential_runner, vault_web_sweep])
         scheduler.start()
         app.bot_data["scheduler"] = scheduler
 
@@ -457,7 +468,18 @@ def main() -> None:
             await msg.reply_text("Hubo un error procesando el audio. ¿Lo escribís?")
             return
         if not text:
-            await msg.reply_text("No pude transcribir ese audio (¿muy largo o error de API?). ¿Lo escribís?")
+            missing = missing_inbound_secrets(app.bot_data["skills"].list())
+            if is_owner and missing:
+                try:
+                    link = app.bot_data["vault_web"].new_link()
+                    await msg.reply_text(
+                        f"Necesito {', '.join(missing)} para procesar audio. Cargala en la misma "
+                        f"red (vence pronto):\n{link}")
+                except Exception:
+                    await msg.reply_text("No pude procesar ese audio. ¿Lo escribís?")
+            else:
+                await msg.reply_text(
+                    "No pude transcribir ese audio (¿muy largo o error de transcripción?). ¿Lo escribís?")
             return
         await _dispatch(update, text, from_voice=True)
 
