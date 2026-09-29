@@ -127,7 +127,8 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     sensitive = (project_root, settings.vault_path,
                  os.path.join(project_root, ".env"), os.path.abspath(settings.claude_config_dir))
     registry = McpRegistry(settings.mcp_config, ".env",
-                           os.path.join(settings.claude_config_dir, "mcp"))
+                           os.path.join(settings.claude_config_dir, "mcp"),
+                           vault=vault, sensitive_paths=sensitive)
     turn_log = SqliteTurnLog(conn)
     ari_spec = AriServerSpec(sys.executable, ("-m", "ari.mcp_server"), {
         "ARI_DB_PATH": os.path.abspath(settings.db_path),
