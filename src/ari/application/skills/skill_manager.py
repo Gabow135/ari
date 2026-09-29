@@ -169,6 +169,8 @@ class SkillManager:
                 continue
             try:
                 out = await l.instance.on_inbound(raw, self._ctx_for(l.manifest))
+            except PermissionError:
+                raise
             except Exception:
                 log.exception("skill %s on_inbound raised unexpectedly", l.status.name)
                 continue

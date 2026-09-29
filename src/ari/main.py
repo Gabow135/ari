@@ -473,7 +473,7 @@ def main() -> None:
                 try:
                     link = app.bot_data["vault_web"].new_link()
                     await msg.reply_text(
-                        f"Necesito {', '.join(missing)} para procesar audio. Cargala en la misma "
+                        f"Necesito {', '.join(missing)} para procesar audio. Cárgala en la misma "
                         f"red (vence pronto):\n{link}")
                 except Exception:
                     await msg.reply_text("No pude procesar ese audio. ¿Lo escribís?")

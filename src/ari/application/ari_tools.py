@@ -266,7 +266,7 @@ class AriTools:
             return DENIED
         text = (nombres or "").strip()
         if not text or len(text) > 500:
-            return "No pude prepararlo: decime qué credencial querés cargar (1–500 caracteres)."
+            return "No pude prepararlo: indica qué credencial quieres cargar (1–500 caracteres)."
         if self._credentials is None:
             return "No pude prepararlo: la cola de credenciales no está disponible."
         await self._credentials.add(self._a.user_id, self._a.chat_id, text)

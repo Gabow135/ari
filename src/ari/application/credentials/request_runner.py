@@ -27,7 +27,7 @@ class CredentialRequestRunner:
                 await self._send(req.chat_id, "No pude generar el link para cargar la credencial.")
                 continue
             await self._send(req.chat_id,
-                f"Para cargar {truncate(req.requested)} abrí este link en la misma red "
+                f"Para cargar {truncate(req.requested)} abre este link en la misma red "
                 f"(vence pronto):\n{link}\nEl formulario muestra todas las credenciales que "
-                f"faltan; completá la que corresponda.")
+                f"faltan; completa la que corresponda.")
             await self._requests.finish(req.id, DONE)
