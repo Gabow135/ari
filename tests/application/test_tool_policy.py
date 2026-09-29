@@ -15,6 +15,9 @@ class FakeRegistry:
     def descriptions(self, is_owner):
         return list(self._owner if is_owner else self._users)
 
+    def degraded_for(self, is_owner):
+        return []
+
     def status(self):
         if self._statuses is not None:
             return self._statuses

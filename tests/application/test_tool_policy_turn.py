@@ -21,6 +21,9 @@ class FakeRegistry:
     def descriptions(self, is_owner):
         return [(n, "desc") for n in self.resolved(is_owner)]
 
+    def degraded_for(self, is_owner):
+        return []
+
 
 SPEC = AriServerSpec("py", ("-m", "ari.mcp_server"), {"ARI_DB_PATH": "/db"})
 
