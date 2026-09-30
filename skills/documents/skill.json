@@ -1,0 +1,12 @@
+{
+  "name": "documents",
+  "version": "0.1.0",
+  "enabled": true,
+  "owner_only": true,
+  "description": "Read PDF, Excel, CSV and text files the user sends (text extraction).",
+  "entrypoint": "skill.py",
+  "factory": "build_skill",
+  "required_secrets": [],
+  "hooks": ["inbound_transform"],
+  "config": { "max_chars": 20000 }
+}
