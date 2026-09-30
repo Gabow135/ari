@@ -11,7 +11,8 @@ def test_catalogue():
     assert ARI_TOOLS == ("agendar", "listar_agenda", "cancelar", "recordar_dato",
                          "olvidar_dato", "ver_datos", "aprobar_acceso", "revocar_acceso",
                          "ver_accesos", "enviar_mensaje", "proponer_codigo", "asignar_mision",
-                         "ver_misiones", "cancelar_mision", "pedir_credenciales")
+                         "ver_misiones", "cancelar_mision", "pedir_credenciales",
+                         "ver_skills", "activar_skill", "desactivar_skill")
 
 
 def test_chat_permissions():

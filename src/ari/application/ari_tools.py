@@ -45,13 +45,15 @@ class Actor:
 
 class AriTools:
     def __init__(self, actor: Actor, *, schedule, memory, turn_log, tz, max_items: int,
-                 clock, gate=None, access=None, coding=None, missions=None, credentials=None):
+                 clock, gate=None, access=None, coding=None, missions=None, credentials=None,
+                 skills=None):
         self._a, self._schedule, self._memory, self._log = actor, schedule, memory, turn_log
         self._tz, self._max, self._clock = tz, max_items, clock
         self._gate, self._access = gate, access
         self._coding = coding  # SqliteCodingRequests | None
         self._missions = missions  # SqliteMissions | None
         self._credentials = credentials  # SqliteCredentialRequests | None
+        self._skills = skills  # SkillManager (load=False) | None
 
     def _allowed(self, tool: str) -> bool:
         if tool in allowed_ari_tools(self._a.is_owner, self._a.context):
@@ -271,6 +273,44 @@ class AriTools:
             return "No pude prepararlo: la cola de credenciales no está disponible."
         await self._credentials.add(self._a.user_id, self._a.chat_id, text)
         return await self._receipt(f"🔑 Te preparo el link seguro para: {truncate(text)}")
+
+    async def ver_skills(self) -> str:
+        if not self._allowed("ver_skills"):
+            return DENIED
+        if self._skills is None:
+            return "No pude verlos: el sistema de skills no está disponible."
+        rows = self._skills.catalog()
+        if not rows:
+            return "No hay skills instalados."
+        lines = []
+        for s in rows:
+            estado = "on" if s["enabled"] else "off"
+            secretos = f" (necesita: {', '.join(s['required_secrets'])})" if s["required_secrets"] else ""
+            desc = s["description"] or ""
+            lines.append(f"• {s['name']} [{estado}]: {desc}{secretos}")
+        return "\n".join(lines)
+
+    async def activar_skill(self, nombre: str) -> str:
+        return await self._toggle_skill(nombre, True, "Activé")
+
+    async def desactivar_skill(self, nombre: str) -> str:
+        return await self._toggle_skill(nombre, False, "Desactivé")
+
+    async def _toggle_skill(self, nombre: str, enabled: bool, verb: str) -> str:
+        if not self._allowed("activar_skill" if enabled else "desactivar_skill"):
+            return DENIED
+        if self._skills is None:
+            return "No pude hacerlo: el sistema de skills no está disponible."
+        query = (nombre or "").strip()
+        names = [c["name"] for c in self._skills.catalog()]
+        match = next((n for n in names if n == query), None) \
+            or next((n for n in names if n.lower() == query.lower()), None)
+        if match is None:
+            listado = ", ".join(names) if names else "(ninguno)"
+            return f"No encontré un skill «{query}». Tienes: {listado}."
+        self._skills.set_enabled(match, enabled)
+        extra = " Si le falta la credencial, te mando el link cuando lo uses." if enabled else ""
+        return await self._receipt(f"🧩 {verb} el skill «{match}».{extra}")
 
     async def proponer_codigo(self, instruccion: str, carpeta: str | None = None) -> str:
         if not self._allowed("proponer_codigo"):

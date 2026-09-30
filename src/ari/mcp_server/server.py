@@ -117,4 +117,19 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         que la cargue sin escribirla en el chat. nombres: qué credencial quiere cargar."""
         return await (await get_tools()).pedir_credenciales(nombres)
 
+    @tool("ver_skills")
+    async def ver_skills() -> str:
+        """(Solo el creador) Lista los skills instalados con su estado (on/off) y descripción."""
+        return await (await get_tools()).ver_skills()
+
+    @tool("activar_skill")
+    async def activar_skill(nombre: str) -> str:
+        """(Solo el creador) Activa un skill instalado por su nombre exacto."""
+        return await (await get_tools()).activar_skill(nombre)
+
+    @tool("desactivar_skill")
+    async def desactivar_skill(nombre: str) -> str:
+        """(Solo el creador) Desactiva un skill instalado por su nombre exacto."""
+        return await (await get_tools()).desactivar_skill(nombre)
+
     return server
