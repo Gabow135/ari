@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -54,12 +56,13 @@ class _Ctx:
 
 class SkillManager:
     def __init__(self, skills_dir: str, vault=None, env: dict | None = None,
-                 env_file: str = ".env", loader=load_skill):
+                 env_file: str = ".env", loader=load_skill, load: bool = True):
         self._dir = skills_dir
         self._vault = vault
         self._env = env if env is not None else os.environ
         self._env_file = env_file
         self._loader = loader
+        self._load = load
         self._stamps: tuple | None = None
         self._loaded: list[_Loaded] = []
         self._refresh()
@@ -130,6 +133,11 @@ class SkillManager:
             if missing:
                 loaded.append(_Loaded(m, SkillStatus(name, version, True, "needs_secrets", missing, hooks), None))
                 continue
+            if not self._load:
+                # discovery/toggling only (e.g. the MCP subprocess): mark active but
+                # never import the skill's code.
+                loaded.append(_Loaded(m, SkillStatus(name, version, True, "active", [], hooks), None))
+                continue
             try:
                 inst = self._loader(name, skill_dir, m["entrypoint"], m["factory"],
                                     dict(m.get("config", {})))
@@ -153,6 +161,24 @@ class SkillManager:
     def list(self) -> list[SkillStatus]:
         self._refresh()
         return [l.status for l in self._loaded]
+
+    def catalog(self) -> list[dict]:
+        """Name/description/enabled/required_secrets straight from each manifest —
+        no secret resolution and no code load. Safe for the MCP subprocess."""
+        out = []
+        for p in self._manifest_paths():
+            try:
+                with open(p, encoding="utf-8") as f:
+                    m = json.load(f)
+            except (OSError, ValueError):
+                continue
+            out.append({
+                "name": m.get("name", ""),
+                "description": m.get("description", ""),
+                "enabled": bool(m.get("enabled", False)),
+                "required_secrets": list(m.get("required_secrets", [])),
+            })
+        return out
 
     def _active(self, is_owner: bool):
         self._refresh()
