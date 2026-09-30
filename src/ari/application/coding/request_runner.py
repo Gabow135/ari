@@ -30,12 +30,17 @@ class CodingRequestRunner:
                 await self._requests.finish(req.id, SKIPPED, "stale")
                 await self._send(req.chat_id, STALE.format(truncate(req.instruction)))
                 continue
-            already_busy = (self._pending.is_busy(req.user_id)
-                            or self._pending.get(req.user_id) is not None)
-            if already_busy or not self._pending.mark_planning(req.user_id):
+            # Genuinely busy only while a confirmed task is executing, or while
+            # another plan is being generated right now for this user. A plan still
+            # awaiting the owner's "dale" is NOT a blocker: a new request supersedes
+            # it (owner chose "newest wins"), so "Preparando plan" stays honest.
+            if self._pending.is_busy(req.user_id) or not self._pending.mark_planning(req.user_id):
                 await self._requests.finish(req.id, SKIPPED, "busy")
                 await self._send(req.chat_id, BUSY.format(truncate(req.instruction)))
                 continue
+            # We hold the planning slot: drop any older, unconfirmed plan and plan
+            # the new one in its place.
+            self._pending.clear(req.user_id)
             self._spawn(self._plan(req))
 
     async def _plan(self, req) -> None:

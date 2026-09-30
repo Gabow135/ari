@@ -5,6 +5,7 @@ import pytest
 
 from ari.application.coding.pending_store import PendingStore
 from ari.application.coding.request_runner import BUSY, CodingRequestRunner
+from ari.domain.coding.entities import CodingInstruction, CodingPlan, PendingAction
 from ari.domain.coding.requests import DONE, FAILED, SKIPPED
 from ari.infrastructure.persistence.db import connect
 from ari.infrastructure.persistence.sqlite_coding_requests import SqliteCodingRequests
@@ -89,17 +90,40 @@ async def test_second_proposal_skipped_while_one_is_planning(requests):
     assert await requests.status_of(first) == DONE
 
 
-async def test_skipped_when_a_plan_awaits_dale_or_a_job_runs(requests):
+async def test_skipped_while_a_confirmed_job_is_executing(requests):
     async def never(*a, **k):
         raise AssertionError("must not plan")
 
     pending = PendingStore()
-    pending.mark_busy("42")
+    pending.mark_busy("42")   # a confirmed task is running right now
     rid = await requests.add("42", "42", "x", None)
     runner, sent, _ = _runner(requests, never, pending=pending)
     await runner()
     assert await requests.status_of(rid) == SKIPPED
     assert "pendiente" in sent[0][1]
+
+
+async def test_new_request_supersedes_unconfirmed_pending_plan(requests):
+    """A plan still awaiting the owner's 'dale' does NOT block a new request:
+    the new one drops the old plan and gets planned, so 'Preparando plan' is honest."""
+    calls = []
+
+    async def request_coding(user_id, text, target, proposed=False):
+        calls.append(text)
+        return "Plan nuevo"
+
+    pending = PendingStore()
+    old = PendingAction(CodingInstruction("42", "algo viejo"),
+                        CodingPlan("resumen", "/x", "algo viejo"), proposed=True)
+    pending.put("42", old)
+    rid = await requests.add("42", "42", "tarea nueva", None)
+    runner, sent, tasks = _runner(requests, request_coding, pending=pending)
+    await runner()
+    await asyncio.gather(*tasks)
+    assert calls == ["tarea nueva"]              # the new one was planned, not skipped
+    assert await requests.status_of(rid) == DONE
+    assert sent == [("42", "Plan nuevo")]
+    assert pending.get("42") is None             # old unconfirmed plan was dropped
 
 
 async def test_stale_request_is_skipped_with_notice(requests):
