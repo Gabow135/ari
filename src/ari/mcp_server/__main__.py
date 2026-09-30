@@ -13,6 +13,7 @@ from ari.infrastructure.persistence.sqlite_credential_requests import SqliteCred
 from ari.infrastructure.persistence.sqlite_missions import SqliteMissions
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
+from ari.application.skills.skill_manager import SkillManager
 from ari.mcp_server.server import actor_from_env, build_server
 
 _tools: AriTools | None = None
@@ -35,7 +36,8 @@ async def _get_tools() -> AriTools:
             gate=AccessGate(access, owners, on_revoke=schedule.cancel_user), access=access,
             coding=SqliteCodingRequests(conn),
             missions=SqliteMissions(conn),
-            credentials=SqliteCredentialRequests(conn))
+            credentials=SqliteCredentialRequests(conn),
+            skills=SkillManager(env.get("ARI_SKILLS_DIR", "./skills"), load=False))
     return _tools
 
 

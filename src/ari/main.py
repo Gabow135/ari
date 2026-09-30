@@ -135,6 +135,7 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         "ARI_TIMEZONE": settings.timezone,
         "ARI_MAX_ITEMS": str(settings.max_items_per_user),
         "ARI_OWNER_IDS": ",".join(sorted(settings.owner_id_set)),
+        "ARI_SKILLS_DIR": os.path.abspath(settings.skills_dir),
     })
     turn_config_writer = TurnConfigWriter(os.path.join(settings.claude_config_dir, "mcp"))
     tools = ToolPolicy(registry, Authorizer(settings.owner_id_set).is_owner, ari=ari_spec,
