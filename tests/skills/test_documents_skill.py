@@ -57,7 +57,7 @@ async def test_xlsx_extracted():
 
 
 async def test_pdf_extracted():
-    # A minimal valid PDF with the text "Hola" — built with pypdf so the fixture is real.
+    # A blank PDF page extracts to empty text -> the skill returns None.
     import pypdf
     w = pypdf.PdfWriter()
     w.add_blank_page(width=200, height=200)

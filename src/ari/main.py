@@ -465,7 +465,7 @@ def main() -> None:
                 text = await media_to_text(update, _download, app.bot_data["skills"], is_owner)
             except Exception:
                 log.exception("media_to_text raised for user %s", msg.from_user.id)
-                await msg.reply_text("Hubo un error procesando el archivo. ¿Lo resumís por texto?")
+                await msg.reply_text("Hubo un error procesando el archivo. ¿Lo resumes por texto?")
                 return
             if not text:
                 missing = missing_inbound_secrets(app.bot_data["skills"].list())
@@ -476,10 +476,10 @@ def main() -> None:
                             f"Necesito {', '.join(missing)} para leer eso. Cárgala en la misma "
                             f"red (vence pronto):\n{link}")
                     except Exception:
-                        await msg.reply_text("No pude procesar ese archivo. ¿Lo resumís por texto?")
+                        await msg.reply_text("No pude procesar ese archivo. ¿Lo resumes por texto?")
                 else:
                     await msg.reply_text(
-                        "No puedo leer ese tipo de archivo por ahora. ¿Me lo resumís por texto?")
+                        "No puedo leer ese tipo de archivo por ahora. ¿Me lo resumes por texto?")
                 return
             await _dispatch(update, text)
             return
