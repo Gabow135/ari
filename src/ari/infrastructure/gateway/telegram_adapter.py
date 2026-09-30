@@ -43,3 +43,29 @@ async def voice_to_text(update, download, manager, is_owner: bool) -> str | None
         attachment=Attachment(kind="voice", mime=getattr(media, "mime_type", None) or "audio/ogg",
                               data=bytes(data), duration=getattr(media, "duration", None)))
     return await manager.run_inbound(raw, is_owner)
+
+
+async def media_to_text(update, download, manager, is_owner: bool) -> str | None:
+    """Extract a photo (largest size) or document, download its bytes, and run it through
+    the skill manager's inbound transforms (vision for images, extraction for docs).
+    Returns the text, or None when there is no photo/document or no skill handled it.
+    `download` is an async callable(media)->bytes."""
+    msg = getattr(update, "effective_message", None) or getattr(update, "message", None)
+    if msg is None:
+        return None
+    photos = getattr(msg, "photo", None)
+    doc = getattr(msg, "document", None)
+    if photos:
+        media, kind, mime, filename = photos[-1], "photo", "image/jpeg", "photo.jpg"
+    elif doc is not None:
+        mime = getattr(doc, "mime_type", None) or "application/octet-stream"
+        kind = "photo" if mime.startswith("image/") else "document"
+        media, filename = doc, getattr(doc, "file_name", None) or ""
+    else:
+        return None
+    data = await download(media)
+    raw = RawInbound(
+        user_id=str(msg.from_user.id), chat_id=str(msg.chat_id),
+        text=getattr(msg, "caption", None),
+        attachment=Attachment(kind=kind, mime=mime, data=bytes(data), filename=filename))
+    return await manager.run_inbound(raw, is_owner)
