@@ -305,10 +305,10 @@ class AriTools:
         names = [c["name"] for c in self._skills.catalog()]
         match = next((n for n in names if n == query), None) \
             or next((n for n in names if n.lower() == query.lower()), None)
-        if match is None:
+        if match is None or not self._skills.set_enabled(match, enabled):
             listado = ", ".join(names) if names else "(ninguno)"
-            return f"No encontré un skill «{query}». Tienes: {listado}."
-        self._skills.set_enabled(match, enabled)
+            name_to_show = query if match is None else match
+            return f"No encontré un skill «{name_to_show}». Tienes: {listado}."
         extra = " Si le falta la credencial, te mando el link cuando lo uses." if enabled else ""
         return await self._receipt(f"🧩 {verb} el skill «{match}».{extra}")
 

@@ -90,3 +90,33 @@ async def test_denied_outside_owner_chat(env, owner, context):
     assert await _tools(env, owner, context).activar_skill("groq_vision") == DENIED
     assert await _tools(env, owner, context).ver_skills() == DENIED
     assert {c["name"]: c["enabled"] for c in skills.catalog()}["groq_vision"] is False
+
+
+async def test_write_time_miss_returns_no_encontre_no_receipt(env):
+    """When set_enabled returns False (TOCTOU: manifest vanished at write time),
+    return 'No encontré' message without success receipt."""
+    conn, _, log = env
+    actor = Actor("42", "42", "Gabriel", True, CHAT, "t1")
+
+    # Create a stub skills manager that passes catalog() but fails at write time
+    class FakeSkillsForTOCTOU:
+        def catalog(self):
+            return [{"name": "groq_audio", "enabled": True, "description": "Audio",
+                    "required_secrets": []}]
+
+        def set_enabled(self, name: str, enabled: bool) -> bool:
+            # Simulate manifest vanishing between catalog() and write
+            return False
+
+    tools = AriTools(actor, schedule=SqliteScheduleStore(conn),
+                     memory=SqliteMemoryAdapter(conn, embedding_dim=4), turn_log=log, tz=TZ,
+                     max_items=20, clock=lambda: NOW, skills=FakeSkillsForTOCTOU())
+
+    out = await tools.activar_skill("groq_audio")
+    # Must contain "No encontré" and the skill name
+    assert "No encontré" in out
+    assert "groq_audio" in out
+    # Must NOT contain success indicator (emoji or past-tense verb)
+    assert "🧩" not in out and "Activé" not in out
+    # Must NOT have a receipt logged
+    assert await log.receipts("t1") == []
