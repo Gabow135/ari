@@ -46,7 +46,7 @@ from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
 from ari.infrastructure.coder.workspace import Workspace
 from ari.infrastructure.gateway.bot_commands import register_commands
 from ari.infrastructure.gateway.progress_message import ProgressMessage
-from ari.infrastructure.gateway.telegram_adapter import TelegramAdapter, voice_to_text
+from ari.infrastructure.gateway.telegram_adapter import TelegramAdapter, voice_to_text, media_to_text
 from ari.infrastructure.llm.claude_code_adapter import ClaudeCodeCliAdapter
 from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
@@ -452,6 +452,37 @@ def main() -> None:
         msg = update.effective_message
         if msg is None or msg.from_user is None:
             return
+        if getattr(msg, "photo", None) or getattr(msg, "document", None):
+            if not await _admit(msg):
+                return
+            is_owner = app.bot_data["gate"].is_owner(str(msg.from_user.id))
+
+            async def _download(media):
+                f = await media.get_file()
+                return await f.download_as_bytearray()
+
+            try:
+                text = await media_to_text(update, _download, app.bot_data["skills"], is_owner)
+            except Exception:
+                log.exception("media_to_text raised for user %s", msg.from_user.id)
+                await msg.reply_text("Hubo un error procesando el archivo. ¿Lo resumís por texto?")
+                return
+            if not text:
+                missing = missing_inbound_secrets(app.bot_data["skills"].list())
+                if is_owner and missing:
+                    try:
+                        link = app.bot_data["vault_web"].new_link()
+                        await msg.reply_text(
+                            f"Necesito {', '.join(missing)} para leer eso. Cárgala en la misma "
+                            f"red (vence pronto):\n{link}")
+                    except Exception:
+                        await msg.reply_text("No pude procesar ese archivo. ¿Lo resumís por texto?")
+                else:
+                    await msg.reply_text(
+                        "No puedo leer ese tipo de archivo por ahora. ¿Me lo resumís por texto?")
+                return
+            await _dispatch(update, text)
+            return
         if not (getattr(msg, "voice", None) or getattr(msg, "audio", None)):
             return
         if not await _admit(msg):
@@ -594,7 +625,8 @@ def main() -> None:
     app.add_handler(CommandHandler(list(LIFECYCLE_COMMANDS), _on_lifecycle))
     app.add_handler(CommandHandler(["code", "fase2"], _on_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
-    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, _on_message))
+    app.add_handler(MessageHandler(
+        filters.VOICE | filters.AUDIO | filters.PHOTO | filters.Document.ALL, _on_message))
     app.run_polling()
 
     # run_polling returned: shutdown (incl. closing the DB) is complete.
