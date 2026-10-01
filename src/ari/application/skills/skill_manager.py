@@ -98,7 +98,15 @@ class SkillManager:
             p = os.path.join(self._dir, e, "skill.json")
             if os.path.isfile(p):
                 out.append(p)
-        return out
+
+        def _priority(p: str) -> int:
+            try:
+                with open(p, encoding="utf-8") as f:
+                    return int(json.load(f).get("priority", 100))
+            except Exception:
+                return 100
+
+        return sorted(out, key=_priority)
 
     def _stamp(self) -> tuple:
         stamps = []
