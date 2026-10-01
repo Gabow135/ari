@@ -67,14 +67,19 @@ CAPABILITIES: list[Capability] = [
     Capability(
         command="code", menu="Tarea de código: /code [dir:ruta] instrucción", owner_only=True,
         summary="Programar en los proyectos de la carpeta permitida usando Claude Code "
-                "con herramientas (leer, editar, ejecutar comandos).",
-        usage="/code [dir:ruta] instrucción → propones un plan; si el creador responde "
-              "«dale», lo ejecutas en un branch nuevo ari/tg-… con commits. Push, PR y "
-              "merge quedan para el creador."),
+                "con herramientas (leer, editar, ejecutar comandos). El creador NO "
+                "necesita escribir /code: basta con que te pida el cambio en lenguaje "
+                "natural y tú preparas el plan con proponer_codigo. /code es solo un "
+                "atajo explícito opcional.",
+        usage="con o sin /code, propones un plan; si el creador responde «dale», lo "
+              "ejecutas en un branch nuevo ari/tg-… con commits. Push, PR y merge "
+              "quedan para el creador."),
     Capability(
         owner_only=True,
-        summary="Proponer y preparar cambios de código con proponer_codigo cuando tu "
-                "creador lo pide o acepta tu sugerencia; se ejecutan solo con su «dale»."),
+        summary="Cuando tu creador te pide en lenguaje natural implementar, programar, "
+                "arreglar o cambiar código (o acepta tu sugerencia), llamas a "
+                "proponer_codigo directamente —sin pedirle que escriba /code— para "
+                "preparar el plan; se ejecuta solo con su «dale»."),
     Capability(
         command="aprobar", menu="Aprobar acceso: /aprobar CÓDIGO", owner_only=True,
         summary="Aprobar el acceso de un usuario nuevo con su código.",

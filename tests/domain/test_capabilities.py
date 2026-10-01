@@ -34,6 +34,14 @@ def test_menu_is_derived_from_registry():
     assert owner[0] == "start"
 
 
+def test_owner_is_told_to_code_from_natural_language():
+    low = render_capabilities(is_owner=True).lower()
+    # The owner triggers coding by asking in plain language; /code is only an
+    # optional shortcut and must never be presented as required.
+    assert "no necesita escribir /code" in low
+    assert "proponer_codigo" in low
+
+
 def test_proactivity_limitations_removed():
     text = " ".join(LIMITATIONS)
     assert "iniciativa propia" not in text and "recordatorios" not in text
