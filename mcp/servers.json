@@ -28,6 +28,22 @@
       "guarded": true,
       "access": "owner",
       "description": "Archivos del computador (carpeta de trabajo del dueño)"
+    },
+    "email": {
+      "command": "npx",
+      "args": ["-y", "mcp-mail-server@2.1.0"],
+      "env": {
+        "IMAP_HOST": "${ARI_IMAP_HOST}",
+        "IMAP_PORT": "993",
+        "IMAP_SECURE": "true",
+        "SMTP_HOST": "${ARI_SMTP_HOST}",
+        "SMTP_PORT": "465",
+        "SMTP_SECURE": "true",
+        "EMAIL_USER": "${ARI_EMAIL_USER}",
+        "EMAIL_PASS": "${ARI_EMAIL_PASS}"
+      },
+      "access": "owner",
+      "description": "Correo por IMAP/SMTP: leer y enviar (cuenta del creador)"
     }
   }
 }
