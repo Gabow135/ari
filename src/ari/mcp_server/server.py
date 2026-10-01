@@ -94,6 +94,16 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         repositorio de Ari)."""
         return await (await get_tools()).proponer_codigo(instruccion, carpeta)
 
+    @tool("proponer_comando")
+    async def proponer_comando(comando: str) -> str:
+        """(Solo el creador) Prepara un comando de terminal para ejecutar en la máquina
+        de tu creador. Llámala directamente SIEMPRE que tu creador te pida en lenguaje
+        natural correr algo en la terminal/consola/shell (p. ej. «corré los tests»,
+        «mostrame el git status», «qué procesos hay», «instalá tal paquete»); no le pidas
+        que escriba ningún comando especial. Solo prepara el comando: nada se ejecuta hasta
+        que tu creador responda «dale». comando: la línea de shell exacta a correr."""
+        return await (await get_tools()).proponer_comando(comando)
+
     @tool("asignar_mision")
     async def asignar_mision(instruccion: str) -> str:
         """Crea una misión de fondo: Ari la ejecuta de forma autónoma, se demore lo que

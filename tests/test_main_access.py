@@ -77,7 +77,7 @@ async def wired(monkeypatch):
     conn = await connect(":memory:", embedding_dim=4)
     app.bot_data.update(
         gate=AccessGate(SqliteAccessStore(conn), owner_ids={"42"}),
-        handler=None, confirm=None,
+        handler=None, confirm=None, confirm_command=None,
         coding_deps=main_mod.CodingDeps(None, None, None, None, None, None))
     yield app, routed
     await conn.close()
@@ -141,7 +141,7 @@ def _run_main_with(monkeypatch, steps):
         conn = await connect(":memory:", embedding_dim=4)
         a.bot_data.update(
             gate=AccessGate(SqliteAccessStore(conn), owner_ids={"42"}),
-            handler=None, confirm=None,
+            handler=None, confirm=None, confirm_command=None,
             coding_deps=main_mod.CodingDeps(None, None, None, None, None, None))
         for command, uid, text in steps:
             if command is None:

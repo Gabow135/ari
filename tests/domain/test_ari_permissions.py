@@ -10,7 +10,8 @@ USER_CHAT = {"agendar", "listar_agenda", "cancelar", "recordar_dato", "olvidar_d
 def test_catalogue():
     assert ARI_TOOLS == ("agendar", "listar_agenda", "cancelar", "recordar_dato",
                          "olvidar_dato", "ver_datos", "aprobar_acceso", "revocar_acceso",
-                         "ver_accesos", "enviar_mensaje", "proponer_codigo", "asignar_mision",
+                         "ver_accesos", "enviar_mensaje", "proponer_codigo", "proponer_comando",
+                         "asignar_mision",
                          "ver_misiones", "cancelar_mision", "pedir_credenciales",
                          "ver_skills", "activar_skill", "desactivar_skill")
 
@@ -38,3 +39,9 @@ def test_proponer_codigo_is_owner_chat_only():
     assert "proponer_codigo" in allowed_ari_tools(True, CHAT)
     for owner, context in [(False, CHAT), (True, TASK), (True, HEARTBEAT), (False, TASK)]:
         assert "proponer_codigo" not in allowed_ari_tools(owner, context)
+
+
+def test_proponer_comando_is_owner_chat_only():
+    assert "proponer_comando" in allowed_ari_tools(True, CHAT)
+    for owner, context in [(False, CHAT), (True, TASK), (True, HEARTBEAT), (False, TASK)]:
+        assert "proponer_comando" not in allowed_ari_tools(owner, context)

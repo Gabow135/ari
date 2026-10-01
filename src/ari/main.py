@@ -21,6 +21,8 @@ from ari.application.coding.flow import CodingDeps, route_message
 from ari.application.coding.pending_store import PendingStore
 from ari.application.coding.request_coding import RequestCoding
 from ari.application.coding.request_runner import CodingRequestRunner
+from ari.application.command.confirm_command import ConfirmCommand
+from ari.application.command.request_runner import CommandRequestRunner
 from ari.application.credentials.request_runner import CredentialRequestRunner
 from ari.application.credentials.needs import missing_inbound_secrets
 from ari.application.missions.run_pending_missions import MissionRunner
@@ -44,6 +46,7 @@ from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.claude_env import claude_cli_env
 from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
 from ari.infrastructure.coder.workspace import Workspace
+from ari.infrastructure.command.shell_runner import ShellRunner
 from ari.infrastructure.gateway.bot_commands import register_commands
 from ari.infrastructure.gateway.progress_message import ProgressMessage
 from ari.infrastructure.gateway.telegram_adapter import TelegramAdapter, voice_to_text, media_to_text
@@ -52,6 +55,7 @@ from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import connect
 from ari.infrastructure.persistence.sqlite_coding_requests import SqliteCodingRequests
+from ari.infrastructure.persistence.sqlite_command_requests import SqliteCommandRequests
 from ari.infrastructure.persistence.sqlite_credential_requests import SqliteCredentialRequests
 from ari.infrastructure.persistence.sqlite_missions import SqliteMissions
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
@@ -217,8 +221,14 @@ def main() -> None:
         request_coding = RequestCoding(coder, workspace, store, default_dir=default_dir)
         confirm = ConfirmCoding(coder, workspace, store)
 
-        # Base deps: chat, confirm_coding, and scheduler are None/placeholder;
-        # all three are bound per-message in _dispatch (scheduler uses the anti-GC wrapper).
+        # Terminal infrastructure: proponer_comando → «dale» → run shell on the host.
+        # A separate pending slot so commands never touch the coding state machine.
+        command_store = PendingStore()
+        confirm_command = ConfirmCommand(ShellRunner(), command_store, cwd=default_dir)
+
+        # Base deps: chat, confirm_coding, confirm_command, and scheduler are
+        # None/placeholder; all are bound per-message in _dispatch (scheduler uses
+        # the anti-GC wrapper).
         coding_deps = CodingDeps(
             authorizer=Authorizer(settings.owner_id_set),
             pending_store=store,
@@ -226,9 +236,12 @@ def main() -> None:
             confirm_coding=None,
             chat=None,
             scheduler=None,  # replaced per-message in _dispatch
+            command_store=command_store,
+            confirm_command=None,  # replaced per-message in _dispatch
         )
         app.bot_data["coding_deps"] = coding_deps
         app.bot_data["confirm"] = confirm
+        app.bot_data["confirm_command"] = confirm_command
 
         # Proactivity: reminders/tasks, system notices, heartbeat.
         async def send(chat_id: str, text: str) -> None:
@@ -248,6 +261,8 @@ def main() -> None:
         coding_runner = CodingRequestRunner(
             coding_requests, request_coding, store, send, spawn, _utcnow,
             progress=lambda chat_id: ProgressMessage(app.bot, int(chat_id)))
+        command_requests = SqliteCommandRequests(c.conn)
+        command_runner = CommandRequestRunner(command_requests, command_store, send, _utcnow)
         credential_requests = SqliteCredentialRequests(c.conn)
         credential_runner = CredentialRequestRunner(credential_requests, c.vault_web, send, _utcnow)
 
@@ -262,6 +277,10 @@ def main() -> None:
                 await coding_runner()
             except Exception:
                 log.exception("coding request runner failed")
+            try:
+                await command_runner()
+            except Exception:
+                log.exception("command request runner failed")
             try:
                 await credential_runner()
             except Exception:
@@ -297,6 +316,9 @@ def main() -> None:
         for stranded in await coding_requests.reset_taken():  # plans interrupted likewise
             await send(stranded.chat_id,
                        f"Se interrumpió la preparación del plan: {truncate(stranded.instruction)}")
+        for stranded in await command_requests.reset_taken():  # commands interrupted before «dale»
+            await send(stranded.chat_id,
+                       f"Se interrumpió un comando pendiente: {truncate(stranded.command)}")
         for r in await credential_requests.reset_taken():
             await send(r.chat_id, "Retomo tu pedido de credencial…")
 
@@ -310,7 +332,8 @@ def main() -> None:
             c.vault_web.sweep_and_maybe_stop()
 
         scheduler = Scheduler([due, notices.tick, heartbeat, flusher, coding_runner,
-                               mission_runner, credential_runner, vault_web_sweep])
+                               command_runner, mission_runner, credential_runner,
+                               vault_web_sweep])
         scheduler.start()
         app.bot_data["scheduler"] = scheduler
 
@@ -378,6 +401,7 @@ def main() -> None:
         message_handler = app.bot_data["handler"]
         base_deps = app.bot_data["coding_deps"]
         confirm = app.bot_data["confirm"]
+        confirm_command = app.bot_data["confirm_command"]
 
         async def report(reply_text: str) -> None:
             for part in TelegramAdapter.split_text(reply_text):
@@ -407,11 +431,18 @@ def main() -> None:
             async with ProgressMessage(app.bot, msg.chat_id):
                 await confirm(uid, action, report)
 
+        async def _confirm_command_with_progress(uid, action) -> None:
+            # Same shape as the coding confirm: its own progress message while the
+            # shell command runs, then the output is reported.
+            async with ProgressMessage(app.bot, msg.chat_id):
+                await confirm_command(uid, action, report)
+
         # Per-message deps: never mutate the shared base instance.
         local_deps = dataclasses.replace(
             base_deps,
             chat=chat,
             confirm_coding=_confirm_with_progress,
+            confirm_command=_confirm_command_with_progress,
             scheduler=_schedule,
         )
 

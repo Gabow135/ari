@@ -19,9 +19,34 @@ class CodingDeps:
     confirm_coding: object
     chat: Callable[[str, str], Awaitable[str]]
     scheduler: Callable
+    # Terminal (proponer_comando): a separate pending slot + confirm, so shell
+    # commands never touch the coding state machine. Optional: coding-only callers
+    # (and older tests) leave them None and the command branch is skipped.
+    command_store: object = None
+    confirm_command: object = None
 
 
 async def route_message(text: str, user_id: str, deps: CodingDeps) -> str | None:
+    # A proposed shell command takes priority and only an exact "dale" runs it.
+    if deps.command_store is not None:
+        cmd_pending = deps.command_store.get(user_id)
+        if cmd_pending is not None:
+            if is_dale(text):
+                # Synchronous guard: pop + mark_busy before scheduling so two
+                # rapid "dale" messages cannot both run the command.
+                if deps.command_store.is_busy(user_id):
+                    return "Ya hay un comando en curso para ti; espera a que termine."
+                action = deps.command_store.pop(user_id)
+                if action is None:
+                    return "Ya hay un comando en curso para ti; espera a que termine."
+                deps.command_store.mark_busy(user_id)
+                deps.scheduler(deps.confirm_command(user_id, action))
+                return "Dale, lo corro. Te paso la salida."
+            if is_negative(text):
+                deps.command_store.clear(user_id)
+                return "Cancelado."
+            # fallthrough: not a clear yes/no -> coding / chat
+
     pending = deps.pending_store.get(user_id)
     if pending is not None:
         # A plan proposed in the background (proponer_codigo) only executes on an

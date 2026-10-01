@@ -9,6 +9,7 @@ from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import open_existing
 from ari.infrastructure.persistence.sqlite_coding_requests import SqliteCodingRequests
+from ari.infrastructure.persistence.sqlite_command_requests import SqliteCommandRequests
 from ari.infrastructure.persistence.sqlite_credential_requests import SqliteCredentialRequests
 from ari.infrastructure.persistence.sqlite_missions import SqliteMissions
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
@@ -35,6 +36,7 @@ async def _get_tools() -> AriTools:
             clock=lambda: datetime.now(timezone.utc),
             gate=AccessGate(access, owners, on_revoke=schedule.cancel_user), access=access,
             coding=SqliteCodingRequests(conn),
+            commands=SqliteCommandRequests(conn),
             missions=SqliteMissions(conn),
             credentials=SqliteCredentialRequests(conn),
             skills=SkillManager(env.get("ARI_SKILLS_DIR", "./skills"), load=False))

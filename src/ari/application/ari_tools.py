@@ -45,12 +45,13 @@ class Actor:
 
 class AriTools:
     def __init__(self, actor: Actor, *, schedule, memory, turn_log, tz, max_items: int,
-                 clock, gate=None, access=None, coding=None, missions=None, credentials=None,
-                 skills=None):
+                 clock, gate=None, access=None, coding=None, commands=None, missions=None,
+                 credentials=None, skills=None):
         self._a, self._schedule, self._memory, self._log = actor, schedule, memory, turn_log
         self._tz, self._max, self._clock = tz, max_items, clock
         self._gate, self._access = gate, access
         self._coding = coding  # SqliteCodingRequests | None
+        self._commands = commands  # SqliteCommandRequests | None
         self._missions = missions  # SqliteMissions | None
         self._credentials = credentials  # SqliteCredentialRequests | None
         self._skills = skills  # SkillManager (load=False) | None
@@ -325,3 +326,14 @@ class AriTools:
             return "No pude prepararlo: la cola de código no está disponible."
         await self._coding.add(self._a.user_id, self._a.chat_id, text, target)
         return await self._receipt(f"🛠️ Preparando plan: {truncate(text)}")
+
+    async def proponer_comando(self, comando: str) -> str:
+        if not self._allowed("proponer_comando"):
+            return DENIED
+        text = (comando or "").strip()
+        if not text or len(text) > 2000:
+            return "No pude prepararlo: el comando debe tener entre 1 y 2000 caracteres."
+        if self._commands is None:
+            return "No pude prepararlo: la cola de comandos no está disponible."
+        await self._commands.add(self._a.user_id, self._a.chat_id, text)
+        return await self._receipt(f"⌨️ Preparando comando: {truncate(text)}")

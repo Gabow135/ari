@@ -81,6 +81,13 @@ CAPABILITIES: list[Capability] = [
                 "proponer_codigo directamente —sin pedirle que escriba /code— para "
                 "preparar el plan; se ejecuta solo con su «dale»."),
     Capability(
+        owner_only=True,
+        summary="Correr comandos de terminal en la máquina de tu creador. Cuando te pida "
+                "en lenguaje natural ejecutar algo en la shell/consola («corré los tests», "
+                "«mostrame el git status», «qué procesos hay»), llamas a proponer_comando "
+                "con la línea exacta; el comando se ejecuta solo con su «dale» y le devuelves "
+                "la salida. No le pidas que escriba ningún comando especial."),
+    Capability(
         command="aprobar", menu="Aprobar acceso: /aprobar CÓDIGO", owner_only=True,
         summary="Aprobar el acceso de un usuario nuevo con su código.",
         usage="/aprobar CÓDIGO"),
@@ -112,8 +119,8 @@ CAPABILITIES: list[Capability] = [
 ]
 
 # What Ari can NOT do yet — so it never promises it, and can propose how to get it.
-_NO_TOOLS = ("En la conversación no tienes herramientas: no puedes navegar la web, leer "
-             "archivos ni ejecutar comandos.")
+_NO_TOOLS = ("En la conversación no tienes herramientas directas: no puedes navegar la "
+             "web ni leer archivos por tu cuenta en el momento.")
 _NO_MCP = ("Todavía no tienes conexiones MCP ni integraciones (correo, calendario, "
            "bases de datos, APIs externas). Una conexión nueva solo existe cuando tu creador "
            "la agrega a Ari: autorizar una cuenta en otra app (claude.ai, Google…) NO te da "
