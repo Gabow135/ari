@@ -44,6 +44,13 @@
       },
       "access": "owner",
       "description": "Correo por IMAP/SMTP: leer y enviar (cuenta del creador)"
+    },
+    "huggingface": {
+      "env": {
+        "HUGGINGFACE_TOKEN": "${HUGGINGFACE_TOKEN}"
+      },
+      "access": "owner",
+      "description": "Token de acceso a HuggingFace (requerido para voice_id / pyannote.audio)"
     }
   }
 }
