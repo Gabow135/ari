@@ -57,6 +57,20 @@ async def test_proponer_codigo_registered_only_for_owner_chat():
     assert "proponer_codigo" in owner and "proponer_codigo" not in user
 
 
+async def test_proponer_codigo_description_does_not_require_slash_code():
+    async def get_tools():
+        raise AssertionError("not called")
+
+    from ari.domain.tools.ari_permissions import allowed_ari_tools
+    server = build_server(get_tools, allowed_ari_tools(True, "chat"))
+    tool = next(t for t in await server.list_tools() if t.name == "proponer_codigo")
+    desc = tool.description
+    # The tool IS the natural-language path, so its own description must not send
+    # the owner to the /code command; it still gates execution behind «dale».
+    assert "/code" not in desc
+    assert "dale" in desc.lower()
+
+
 async def test_build_server_with_allowed_list_exposes_only_those_tools():
     conn = await connect(":memory:", embedding_dim=4)
     tools = AriTools(actor_from_env(ENV), schedule=SqliteScheduleStore(conn),

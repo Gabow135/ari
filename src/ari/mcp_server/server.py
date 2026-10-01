@@ -85,11 +85,13 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
 
     @tool("proponer_codigo")
     async def proponer_codigo(instruccion: str, carpeta: str | None = None) -> str:
-        """(Solo el creador) Prepara un plan para implementar o cambiar código con /code.
-        Úsala solo cuando tu creador pida implementar o cambiar algo, o acepte tu
-        sugerencia de hacerlo. Solo prepara el plan: nada se modifica hasta que tu
-        creador responda «dale». carpeta: opcional, relativa a la carpeta permitida
-        (por defecto, el repositorio de Ari)."""
+        """(Solo el creador) Prepara un plan para implementar, programar, arreglar o
+        cambiar código. Llámala directamente SIEMPRE que tu creador te pida en lenguaje
+        natural implementar, programar, arreglar o cambiar algo (o acepte tu sugerencia):
+        es la forma de arrancar una tarea de código; no le pidas que escriba ningún
+        comando. Solo prepara el plan: nada se modifica hasta que tu creador responda
+        «dale». carpeta: opcional, relativa a la carpeta permitida (por defecto, el
+        repositorio de Ari)."""
         return await (await get_tools()).proponer_codigo(instruccion, carpeta)
 
     @tool("asignar_mision")
