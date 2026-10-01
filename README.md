@@ -6,6 +6,32 @@ hexagonal (ports & adapters) architecture.
 
 **Phase 1** (this repo): Telegram gateway + layered memory + Claude reasoning.
 
+## Quick Install
+
+One command bootstraps every prerequisite (Git, Python ≥3.11, Node/npm, uv and
+the Claude Code CLI), checks Ari out into `~/.ari` and puts an `ari` command on
+your PATH. It never replaces tools you already have.
+
+**Linux, macOS, WSL2**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Gabow135/ari/main/install.sh | bash
+```
+
+**Windows (native, PowerShell)**
+
+```powershell
+iex (irm https://raw.githubusercontent.com/Gabow135/ari/main/install.ps1)
+```
+
+Then finish setup:
+
+1. `claude login` — authenticate the Claude Code CLI (uses your subscription).
+2. Edit `~/.ari/.env` — set `TELEGRAM_BOT_TOKEN`, your owner id and any credentials.
+3. Run `ari`.
+
+> Prefer a manual / editable dev checkout? See [Setup](#setup) below.
+
 ## How it works
 
 - **Domain core** (`src/ari/domain`) — pure, no external dependencies: entities,
