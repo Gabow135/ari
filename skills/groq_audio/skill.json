@@ -20,6 +20,8 @@
     "stt_model": "whisper-large-v3-turbo",
     "tts_model": "canopylabs/orpheus-v1-english",
     "tts_voice": "troy",
-    "reply_with_voice": true
+    "reply_with_voice": true,
+    "profiles_dir": "data/voice_profiles",
+    "speaker_id_threshold": 0.75
   }
 }

@@ -1,9 +1,18 @@
+import json
+import os
+import time
+
 import httpx
 
 from ari.domain.skills.models import Delivery
 
 _BASE = "https://api.groq.com/openai/v1"
 _MAX_BYTES = 25 * 1024 * 1024  # Groq free-tier transcription limit
+_PROFILES_DIR = "data/voice_profiles"
+_PENDING_FILE = "_pending.json"
+_ENROLL_TIMEOUT = 300  # seconds
+
+_UNSET = object()  # sentinel for uninitialized cached instances
 
 
 class GroqClient:
@@ -116,7 +125,6 @@ def _build_pyannote_diarizer(token):
 
     async def diarize(audio_bytes, mime):
         import asyncio
-        import os
         import tempfile
 
         def _run():
@@ -135,11 +143,121 @@ def _build_pyannote_diarizer(token):
     return diarize
 
 
+def _build_pyannote_embedder(token):
+    """Load pyannote embedding model for speaker identification.
+    Returns an async callable ``(audio_bytes, mime) -> numpy.ndarray | None``,
+    or None when pyannote is not installed or the model fails to load.
+    Requires the user to have accepted pyannote/embedding conditions on HF."""
+    try:
+        from pyannote.audio import Inference
+    except Exception:
+        return None
+    try:
+        model = Inference("pyannote/embedding", window="whole", use_auth_token=token)
+    except Exception:
+        return None
+
+    async def embed(audio_bytes, mime):
+        import asyncio
+        import tempfile
+        import numpy as np
+
+        suffix = ".ogg" if "ogg" in (mime or "") else ".wav"
+
+        def _run():
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+                f.write(audio_bytes)
+                path = f.name
+            try:
+                result = model(path)
+                return np.array(result).flatten()
+            finally:
+                os.remove(path)
+
+        return await asyncio.to_thread(_run)
+
+    return embed
+
+
+# ---- voice profile helpers ---------------------------------------------------
+
+def _read_pending(profiles_dir):
+    """Read pending enrollment. Returns dict or None if absent/expired."""
+    path = os.path.join(profiles_dir, _PENDING_FILE)
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if time.time() - data.get("ts", 0) > _ENROLL_TIMEOUT:
+            os.remove(path)
+            return None
+        return data
+    except (OSError, json.JSONDecodeError, KeyError):
+        return None
+
+
+def _clear_pending(profiles_dir):
+    path = os.path.join(profiles_dir, _PENDING_FILE)
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _save_profile(profiles_dir, name, embedding):
+    import numpy as np
+    os.makedirs(profiles_dir, exist_ok=True)
+    np.save(os.path.join(profiles_dir, f"{name}.npy"), embedding)
+
+
+def _load_voice_profiles(profiles_dir):
+    """Load all saved voice profile embeddings. Returns {name: ndarray}."""
+    import numpy as np
+    profiles: dict = {}
+    try:
+        for fname in os.listdir(profiles_dir):
+            if fname.startswith("_") or not fname.endswith(".npy"):
+                continue
+            name = fname[:-4]
+            profiles[name] = np.load(os.path.join(profiles_dir, fname))
+    except OSError:
+        pass
+    return profiles
+
+
+def _cosine_similarity(a, b):
+    import numpy as np
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb))
+
+
+def _identify_speaker(embedding, profiles, threshold=0.75):
+    """Return the best-matching profile name, or None if below threshold."""
+    best_name, best_sim = None, -1.0
+    for name, profile_emb in profiles.items():
+        sim = _cosine_similarity(embedding, profile_emb)
+        if sim > best_sim:
+            best_name, best_sim = name, sim
+    return best_name if best_sim >= threshold else None
+
+
+# ---- skill -------------------------------------------------------------------
+
 class GroqAudioSkill:
-    def __init__(self, config, diarizer_factory=None):
+    def __init__(self, config, diarizer_factory=None, embedder_factory=None):
         self._cfg = config
-        # Injected in tests; defaults to the real (lazy) pyannote builder.
         self._diarizer_factory = diarizer_factory or _build_pyannote_diarizer
+        self._embedder_factory = embedder_factory or _build_pyannote_embedder
+        # Cached per HF token so the heavy model is only loaded once.
+        self._embedder = _UNSET
+        self._embedder_token: str | None = None
+
+    def _get_embedder(self, token):
+        if self._embedder is _UNSET or self._embedder_token != token:
+            self._embedder = self._embedder_factory(token)
+            self._embedder_token = token
+        return self._embedder
 
     async def on_inbound(self, raw, ctx):
         att = raw.attachment
@@ -151,16 +269,76 @@ class GroqAudioSkill:
         try:
             client = GroqClient(ctx.secret("GROQ_API_KEY"))
             token = ctx.optional_secret("HUGGINGFACE_TOKEN")
+            profiles_dir = self._cfg.get("profiles_dir", _PROFILES_DIR)
+
             if token:
+                # 1. Enrollment takes priority: consume the pending sample.
+                pending = _read_pending(profiles_dir)
+                if pending:
+                    enrolled = await self._enroll(client, att, token, pending, profiles_dir, ctx)
+                    if enrolled:
+                        return enrolled
+
+                # 2. Named-speaker identification (beats generic diarization).
+                profiles = _load_voice_profiles(profiles_dir)
+                if profiles:
+                    identified = await self._identified(client, att, token, profiles, ctx)
+                    if identified:
+                        return identified
+
+                # 3. Generic diarization (unnamed speakers).
                 labeled = await self._diarized(client, att, token, ctx)
                 if labeled:
                     return labeled
+
             text = await client.transcribe(
                 att.data, model=self._cfg.get("stt_model", "whisper-large-v3-turbo"),
                 filename=att.filename or "voice.ogg")
             return text or None
         except Exception as exc:  # network/HTTP/parse — fall back to a text reply
             ctx.log.warning("groq_audio: transcription failed: %s", exc)
+            return None
+
+    async def _enroll(self, client, att, token, pending, profiles_dir, ctx):
+        """Extract speaker embedding from the sample and persist the profile."""
+        try:
+            embedder = self._get_embedder(token)
+            if embedder is None:
+                return None
+            embedding = await embedder(att.data, att.mime)
+            _save_profile(profiles_dir, pending["name"], embedding)
+            _clear_pending(profiles_dir)
+            text = await client.transcribe(
+                att.data, model=self._cfg.get("stt_model", "whisper-large-v3-turbo"),
+                filename=att.filename or "voice.ogg")
+            name = pending["name"]
+            msg = f"✓ Perfil de {name} guardado."
+            if text:
+                msg += f' Dijiste: "{text}"'
+            return msg
+        except Exception as exc:
+            ctx.log.warning("groq_audio: enrollment failed: %s", exc)
+            return None
+
+    async def _identified(self, client, att, token, profiles, ctx):
+        """Identify speaker from saved profiles and return a labeled transcription."""
+        try:
+            embedder = self._get_embedder(token)
+            if embedder is None:
+                return None
+            embedding = await embedder(att.data, att.mime)
+            threshold = self._cfg.get("speaker_id_threshold", 0.75)
+            speaker = _identify_speaker(embedding, profiles, threshold)
+            text = await client.transcribe(
+                att.data, model=self._cfg.get("stt_model", "whisper-large-v3-turbo"),
+                filename=att.filename or "voice.ogg")
+            if not text:
+                return None
+            if speaker:
+                return f"**{speaker}:** {text}"
+            return text
+        except Exception as exc:
+            ctx.log.warning("groq_audio: speaker identification failed: %s", exc)
             return None
 
     async def _diarized(self, client, att, token, ctx):
