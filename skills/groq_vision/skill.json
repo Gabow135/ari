@@ -1,13 +1,17 @@
 {
   "name": "groq_vision",
   "version": "0.1.0",
-  "enabled": false,
+  "enabled": true,
   "owner_only": true,
   "description": "Describe and OCR images the user sends, via Groq vision.",
   "entrypoint": "skill.py",
   "factory": "build_skill",
-  "required_secrets": ["GROQ_API_KEY"],
-  "hooks": ["inbound_transform"],
+  "required_secrets": [
+    "GROQ_API_KEY"
+  ],
+  "hooks": [
+    "inbound_transform"
+  ],
   "config": {
     "vision_model": "meta-llama/llama-4-scout-17b-16e-instruct",
     "prompt": "Describe esta imagen en detalle y transcribe textualmente cualquier texto visible.",
