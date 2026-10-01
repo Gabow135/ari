@@ -65,6 +65,7 @@ from ari.infrastructure.tools.mcp_registry import McpRegistry
 from ari.infrastructure.tools.turn_config import TurnConfigWriter
 from ari.infrastructure.vault.fernet_vault import FernetVault
 from ari.infrastructure.vault_web.maintainer import VaultWebMaintainer
+from ari.infrastructure.bot_errors import handle_bot_error
 from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
@@ -659,6 +660,13 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
     app.add_handler(MessageHandler(
         filters.VOICE | filters.AUDIO | filters.PHOTO | filters.Document.ALL, _on_message))
+
+    async def _on_error(_update, context) -> None:
+        # A Telegram Conflict means a second Ari is polling the same token;
+        # stop this one so exactly one instance stays alive and working.
+        handle_bot_error(context.error, stop=context.application.stop_running)
+
+    app.add_error_handler(_on_error)
     app.run_polling()
 
     # run_polling returned: shutdown (incl. closing the DB) is complete.

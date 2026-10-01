@@ -26,6 +26,9 @@ class _FakeApp:
     def add_handler(self, h):
         self.handlers.append(h)
 
+    def add_error_handler(self, _fn):
+        pass
+
     def stop_running(self):
         self.stopped = True
 
