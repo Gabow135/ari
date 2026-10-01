@@ -9,6 +9,8 @@ import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from ari.infrastructure.vault_web.names import KNOWN_LABELS
+
 log = logging.getLogger("ari.vault_web")
 
 
@@ -16,9 +18,13 @@ def _render(token: str, names: list[str], have: set[str], stored: list[str]) -> 
     rows = []
     for n in names:
         badge = "cargado" if n in have else "falta"
-        safe = html.escape(n)
-        rows.append(f'<label>{safe} <em>({badge})</em><br>'
-                    f'<input type="password" name="{safe}" autocomplete="off"></label><br><br>')
+        safe_n = html.escape(n)
+        label_text, desc = KNOWN_LABELS.get(n, (n, ""))
+        safe_label = html.escape(label_text)
+        desc_html = f'<small>{html.escape(desc)}</small><br>' if desc else ''
+        rows.append(f'<label>{safe_label} <em>({badge})</em><br>'
+                    f'{desc_html}'
+                    f'<input type="password" name="{safe_n}" autocomplete="off"></label><br><br>')
     note = ""
     if stored:
         note = f'<p class="ok">Guardado: {html.escape(", ".join(stored))}</p>'
