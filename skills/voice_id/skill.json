@@ -1,0 +1,18 @@
+{
+  "name": "voice_id",
+  "version": "0.1.0",
+  "enabled": true,
+  "owner_only": true,
+  "description": "Enroll and identify family voice profiles using pyannote.audio embeddings.",
+  "entrypoint": "skill.py",
+  "factory": "build_skill",
+  "required_secrets": [],
+  "optional_secrets": [],
+  "hooks": [
+    "inbound_transform"
+  ],
+  "config": {
+    "profiles_dir": "data/voice_profiles",
+    "enroll_timeout": 300
+  }
+}
