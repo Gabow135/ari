@@ -21,6 +21,9 @@ from tests.coding_fakes import FakeCoder
 class _FakeWorkspace:
     """Stand-in for ConfirmCoding's branch creation: real Workspace.create_branch
     shells out to git, which this integration test doesn't need to exercise."""
+    async def current_branch(self, target_dir):
+        return "main"
+
     async def create_branch(self, target_dir, slug):
         return f"ari/tg-{slug}"
 
