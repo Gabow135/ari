@@ -1,8 +1,12 @@
 import importlib.util
+import json
 import logging
 import pathlib
+import time
 
 import httpx
+import numpy as np
+import pytest
 
 from ari.domain.skills.models import Attachment, InboundContext, RawInbound
 from ari.domain.ports.gateway_port import OutgoingMessage
@@ -204,3 +208,215 @@ async def test_on_inbound_no_token_skips_diarization(monkeypatch):
     raw = RawInbound(user_id="1", chat_id="2",
                      attachment=Attachment(kind="audio", mime="audio/ogg", data=b"x"))
     assert await skill.on_inbound(raw, _Ctx(hf=None)) == "hola mundo"
+
+
+# ---- speaker identification & enrollment (pyannote embedding) ----------------
+
+def _fake_embedding(val=0.9):
+    """Return a unit-norm 512-dim embedding biased toward val."""
+    arr = np.full(512, val)
+    return arr / np.linalg.norm(arr)
+
+
+def test_cosine_similarity_identical_vectors():
+    mod = _mod()
+    v = _fake_embedding(1.0)
+    assert abs(mod._cosine_similarity(v, v) - 1.0) < 1e-6
+
+
+def test_cosine_similarity_orthogonal_vectors():
+    mod = _mod()
+    a = np.zeros(4); a[0] = 1.0
+    b = np.zeros(4); b[1] = 1.0
+    assert abs(mod._cosine_similarity(a, b)) < 1e-6
+
+
+def test_identify_speaker_above_threshold():
+    mod = _mod()
+    emb = _fake_embedding(0.9)
+    profiles = {"Gabriel": emb.copy(), "María": _fake_embedding(-0.9)}
+    assert mod._identify_speaker(emb, profiles, threshold=0.75) == "Gabriel"
+
+
+def test_identify_speaker_below_threshold_returns_none():
+    mod = _mod()
+    emb = _fake_embedding(0.9)
+    profiles = {"Gabriel": _fake_embedding(-0.9)}
+    assert mod._identify_speaker(emb, profiles, threshold=0.75) is None
+
+
+def test_load_voice_profiles_empty_dir(tmp_path):
+    mod = _mod()
+    assert mod._load_voice_profiles(str(tmp_path)) == {}
+
+
+def test_load_voice_profiles_reads_npy_files(tmp_path):
+    mod = _mod()
+    emb = _fake_embedding(0.5)
+    np.save(tmp_path / "Gabriel.npy", emb)
+    profiles = mod._load_voice_profiles(str(tmp_path))
+    assert "Gabriel" in profiles
+    assert profiles["Gabriel"].shape == emb.shape
+
+
+def test_load_voice_profiles_ignores_underscore_files(tmp_path):
+    mod = _mod()
+    np.save(tmp_path / "_pending.npy", _fake_embedding())
+    (tmp_path / "_pending.json").write_text("{}")
+    profiles = mod._load_voice_profiles(str(tmp_path))
+    assert profiles == {}
+
+
+async def test_on_inbound_enrolls_pending_and_returns_confirmation(monkeypatch, tmp_path):
+    mod = _mod()
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        async def transcribe(self, *a, **k): return "hola soy Gabriel"
+
+    monkeypatch.setattr(mod, "GroqClient", FakeClient)
+
+    emb = _fake_embedding()
+
+    async def fake_embed(audio, mime):
+        return emb
+
+    pending = {"name": "Gabriel", "chat_id": "2", "ts": time.time()}
+    (tmp_path / "_pending.json").write_text(json.dumps(pending))
+
+    cfg = {"profiles_dir": str(tmp_path)}
+    skill = mod.GroqAudioSkill(cfg,
+                                diarizer_factory=lambda t: None,
+                                embedder_factory=lambda t: fake_embed)
+    raw = RawInbound(user_id="1", chat_id="2",
+                     attachment=Attachment(kind="voice", mime="audio/ogg", data=b"x"))
+    result = await skill.on_inbound(raw, _Ctx(hf="tok"))
+    assert "Gabriel" in result
+    assert "✓" in result
+    assert (tmp_path / "Gabriel.npy").exists()
+    assert not (tmp_path / "_pending.json").exists()
+
+
+async def test_on_inbound_ignores_expired_pending(monkeypatch, tmp_path):
+    mod = _mod()
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        async def transcribe(self, *a, **k): return "texto"
+
+    monkeypatch.setattr(mod, "GroqClient", FakeClient)
+
+    expired = {"name": "Gabriel", "chat_id": "2", "ts": time.time() - 400}
+    (tmp_path / "_pending.json").write_text(json.dumps(expired))
+
+    cfg = {"profiles_dir": str(tmp_path)}
+    skill = mod.GroqAudioSkill(cfg,
+                                diarizer_factory=lambda t: None,
+                                embedder_factory=lambda t: None)
+    raw = RawInbound(user_id="1", chat_id="2",
+                     attachment=Attachment(kind="voice", mime="audio/ogg", data=b"x"))
+    result = await skill.on_inbound(raw, _Ctx(hf="tok"))
+    assert result == "texto"
+    assert not (tmp_path / "Gabriel.npy").exists()
+
+
+async def test_on_inbound_identified_speaker_prepends_name(monkeypatch, tmp_path):
+    mod = _mod()
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        async def transcribe(self, *a, **k): return "buenos días"
+
+    monkeypatch.setattr(mod, "GroqClient", FakeClient)
+
+    emb = _fake_embedding(0.9)
+    np.save(tmp_path / "Gabriel.npy", emb)
+
+    async def fake_embed(audio, mime):
+        return emb.copy()
+
+    cfg = {"profiles_dir": str(tmp_path), "speaker_id_threshold": 0.75}
+    skill = mod.GroqAudioSkill(cfg,
+                                diarizer_factory=lambda t: None,
+                                embedder_factory=lambda t: fake_embed)
+    raw = RawInbound(user_id="1", chat_id="2",
+                     attachment=Attachment(kind="voice", mime="audio/ogg", data=b"x"))
+    result = await skill.on_inbound(raw, _Ctx(hf="tok"))
+    assert result == "**Gabriel:** buenos días"
+
+
+async def test_on_inbound_no_match_returns_plain_transcript(monkeypatch, tmp_path):
+    mod = _mod()
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        async def transcribe(self, *a, **k): return "buenos días"
+
+    monkeypatch.setattr(mod, "GroqClient", FakeClient)
+
+    np.save(tmp_path / "Gabriel.npy", _fake_embedding(0.9))
+
+    async def fake_embed(audio, mime):
+        return _fake_embedding(-0.9)  # opposite direction — no match
+
+    cfg = {"profiles_dir": str(tmp_path), "speaker_id_threshold": 0.75}
+    skill = mod.GroqAudioSkill(cfg,
+                                diarizer_factory=lambda t: None,
+                                embedder_factory=lambda t: fake_embed)
+    raw = RawInbound(user_id="1", chat_id="2",
+                     attachment=Attachment(kind="voice", mime="audio/ogg", data=b"x"))
+    result = await skill.on_inbound(raw, _Ctx(hf="tok"))
+    assert result == "buenos días"
+
+
+async def test_on_inbound_embedder_unavailable_falls_through_to_plain(monkeypatch, tmp_path):
+    mod = _mod()
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        async def transcribe(self, *a, **k): return "fallback"
+
+    monkeypatch.setattr(mod, "GroqClient", FakeClient)
+
+    np.save(tmp_path / "Gabriel.npy", _fake_embedding())
+
+    cfg = {"profiles_dir": str(tmp_path)}
+    skill = mod.GroqAudioSkill(cfg,
+                                diarizer_factory=lambda t: None,
+                                embedder_factory=lambda t: None)  # pyannote absent
+    raw = RawInbound(user_id="1", chat_id="2",
+                     attachment=Attachment(kind="voice", mime="audio/ogg", data=b"x"))
+    result = await skill.on_inbound(raw, _Ctx(hf="tok"))
+    assert result == "fallback"
+
+
+async def test_embedder_is_cached_across_calls(monkeypatch, tmp_path):
+    """_get_embedder is called once per token, not once per inbound."""
+    mod = _mod()
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        async def transcribe(self, *a, **k): return "texto"
+
+    monkeypatch.setattr(mod, "GroqClient", FakeClient)
+
+    build_count = {"n": 0}
+
+    async def fake_embed(audio, mime):
+        return _fake_embedding()
+
+    def counting_factory(token):
+        build_count["n"] += 1
+        return fake_embed
+
+    np.save(tmp_path / "Gabriel.npy", _fake_embedding())
+    cfg = {"profiles_dir": str(tmp_path)}
+    skill = mod.GroqAudioSkill(cfg,
+                                diarizer_factory=lambda t: None,
+                                embedder_factory=counting_factory)
+    raw = RawInbound(user_id="1", chat_id="2",
+                     attachment=Attachment(kind="voice", mime="audio/ogg", data=b"x"))
+    ctx = _Ctx(hf="tok")
+    await skill.on_inbound(raw, ctx)
+    await skill.on_inbound(raw, ctx)
+    assert build_count["n"] == 1  # factory called once; embedder reused
