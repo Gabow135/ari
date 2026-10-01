@@ -27,6 +27,7 @@ from ari.application.credentials.request_runner import CredentialRequestRunner
 from ari.application.credentials.needs import missing_inbound_secrets
 from ari.application.missions.run_pending_missions import MissionRunner
 from ari.application.handle_message import HandleMessage
+from ari.domain.memory.recall_ranker import RankWeights, RecallRanker
 from ari.application.memory_maintainer import MemoryMaintainer
 from ari.application.outbox import OutboxFlusher
 from ari.application.schedule.heartbeat import Heartbeat
@@ -45,6 +46,7 @@ from ari.domain.schedule.quiet_hours import parse_window
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.claude_env import claude_cli_env
 from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
+from ari.infrastructure.coder.verifier import CoderVerifier
 from ari.infrastructure.coder.workspace import Workspace
 from ari.infrastructure.command.shell_runner import ShellRunner
 from ari.infrastructure.gateway.bot_commands import register_commands
@@ -151,6 +153,13 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     schedule_store = SqliteScheduleStore(conn)
     actions = ScheduleActions(schedule_store, tz, settings.max_items_per_user, clock=_utcnow)
     agent, soul = AgentService(), SoulLoader(settings.soul_dir)
+    ranker = RecallRanker(RankWeights(
+        similarity=settings.rank_similarity_weight,
+        recency=settings.rank_recency_weight,
+        importance=settings.rank_importance_weight,
+        recency_half_life_days=settings.rank_recency_half_life_days,
+        min_similarity=settings.rank_min_similarity,
+    ))
     handler = HandleMessage(
         memory=memory, llm=llm, embeddings=embeddings, agent=agent,
         working_memory_size=settings.working_memory_size,
@@ -161,6 +170,9 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         actions=actions,
         tools=tools,
         turn_log=turn_log,
+        ranker=ranker,
+        candidate_multiplier=settings.candidate_multiplier,
+        dedup_similarity=settings.dedup_similarity,
     )
     cert_dir = os.path.dirname(os.path.expanduser(settings.vault_path))
     skills = SkillManager(settings.skills_dir, vault)
@@ -220,7 +232,16 @@ def main() -> None:
         default_dir = os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))))
         request_coding = RequestCoding(coder, workspace, store, default_dir=default_dir)
-        confirm = ConfirmCoding(coder, workspace, store)
+        # Verify on the ari/tg branch, then auto-merge into the live branch only on
+        # green (user-chosen strategy). on_merged reloads skills so the running bot
+        # picks up a new/edited skill without a restart and reports what went live.
+        verifier = CoderVerifier(timeout=settings.coding_timeout_seconds)
+
+        async def _on_coding_merged() -> list[str]:
+            return c.skills.reload()
+
+        confirm = ConfirmCoding(coder, workspace, store,
+                                verifier=verifier, on_merged=_on_coding_merged)
 
         # Terminal infrastructure: proponer_comando → «dale» → run shell on the host.
         # A separate pending slot so commands never touch the coding state machine.
