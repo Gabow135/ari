@@ -45,6 +45,7 @@ from ari.domain.schedule.quiet_hours import parse_window
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.claude_env import claude_cli_env
 from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
+from ari.infrastructure.coder.verifier import CoderVerifier
 from ari.infrastructure.coder.workspace import Workspace
 from ari.infrastructure.command.shell_runner import ShellRunner
 from ari.infrastructure.gateway.bot_commands import register_commands
@@ -220,7 +221,16 @@ def main() -> None:
         default_dir = os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))))
         request_coding = RequestCoding(coder, workspace, store, default_dir=default_dir)
-        confirm = ConfirmCoding(coder, workspace, store)
+        # Verify on the ari/tg branch, then auto-merge into the live branch only on
+        # green (user-chosen strategy). on_merged reloads skills so the running bot
+        # picks up a new/edited skill without a restart and reports what went live.
+        verifier = CoderVerifier(timeout=settings.coding_timeout_seconds)
+
+        async def _on_coding_merged() -> list[str]:
+            return c.skills.reload()
+
+        confirm = ConfirmCoding(coder, workspace, store,
+                                verifier=verifier, on_merged=_on_coding_merged)
 
         # Terminal infrastructure: proponer_comando → «dale» → run shell on the host.
         # A separate pending slot so commands never touch the coding state machine.

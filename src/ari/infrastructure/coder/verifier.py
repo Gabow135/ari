@@ -21,32 +21,6 @@ class VerifyResult:
     detail: str = ""
 
 
-async def _default_runner(argv: list[str], cwd: str) -> tuple[str, str, int]:
-    """Default runner: spawns a subprocess with asyncio and enforces a hard timeout.
-
-    Returns (stdout, stderr, returncode).  On TimeoutError the returncode is -1
-    and stderr describes the timeout so verify() can report not-ok.
-    """
-    p = await asyncio.create_subprocess_exec(
-        *argv,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=cwd,
-    )
-    try:
-        raw_out, raw_err = await asyncio.wait_for(p.communicate(), timeout=900)
-    except TimeoutError:
-        try:
-            p.kill()
-        except ProcessLookupError:
-            pass
-        return "", f"process timed out after 900s: {argv}", -1
-
-    stdout = raw_out.decode(errors="replace").strip()
-    stderr = raw_err.decode(errors="replace").strip()
-    return stdout, stderr, p.returncode
-
-
 class CoderVerifier:
     """Installs project dependencies and runs the fast test suite.
 
@@ -68,7 +42,31 @@ class CoderVerifier:
         self._test_cmd = test_cmd
         self._install_cmd = install_cmd
         self._timeout = timeout
-        self._runner = runner if runner is not None else _default_runner
+        self._runner = runner if runner is not None else self._default_runner
+
+    async def _default_runner(self, argv: list[str], cwd: str) -> tuple[str, str, int]:
+        """Spawn a subprocess with asyncio and enforce the configured timeout.
+
+        Returns (stdout, stderr, returncode). On TimeoutError the returncode is -1
+        and stderr describes the timeout so verify() reports not-ok.
+        """
+        p = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+        )
+        try:
+            raw_out, raw_err = await asyncio.wait_for(p.communicate(), timeout=self._timeout)
+        except TimeoutError:
+            try:
+                p.kill()
+            except ProcessLookupError:
+                pass
+            return "", f"process timed out after {self._timeout}s: {argv}", -1
+        stdout = raw_out.decode(errors="replace").strip()
+        stderr = raw_err.decode(errors="replace").strip()
+        return stdout, stderr, p.returncode
 
     async def verify(self, target_dir: str, deps_changed: bool = False) -> VerifyResult:
         """Install deps (when changed) then run the test suite.
