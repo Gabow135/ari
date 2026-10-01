@@ -5,6 +5,14 @@ import re
 _VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _EXCLUDE = {"ARI_FS_ROOT"}
 
+# Human-readable metadata for credentials shown in the web form: name → (label, description).
+KNOWN_LABELS: dict[str, tuple[str, str]] = {
+    "HUGGINGFACE_TOKEN": (
+        "HuggingFace Token",
+        "Token de acceso a HuggingFace para pyannote.audio",
+    ),
+}
+
 
 def configurable_secret_names(servers_json_path: str) -> list[str]:
     try:

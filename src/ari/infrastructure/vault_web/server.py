@@ -11,6 +11,8 @@ import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from ari.infrastructure.vault_web.names import KNOWN_LABELS
+
 log = logging.getLogger("ari.vault_web")
 
 
@@ -136,6 +138,7 @@ button[type=submit]:hover{transform:translateY(-2px);background-position:right c
   box-shadow:0 14px 40px rgba(168,85,247,.42)}
 button[type=submit]:active{transform:translateY(0)}
 .foot{margin:18px 0 0;font-size:.72rem;color:var(--muted);text-align:center;line-height:1.5}
+.desc{font-size:.72rem;color:var(--muted);margin:0 0 8px;line-height:1.4}
 """
 
 # One tiny inline script: live filter + chip tabs + expand-to-edit. It is pinned in
@@ -213,14 +216,17 @@ def _render(token: str, names: list[str], have: set[str], stored: list[str]) -> 
         loaded = n in have
         klass, badge = ("loaded", "cargado") if loaded else ("missing", "falta")
         safe = html.escape(n)
+        label_text, desc = KNOWN_LABELS.get(n, (n, ""))
+        safe_label = html.escape(label_text)
         placeholder = "nuevo valor para reemplazar" if loaded else "pegá el valor acá"
+        desc_html = f'<p class="desc">{html.escape(desc)}</p>' if desc else ""
         rows.append(
             f'<div class="field" data-name="{safe.lower()}" data-loaded="{int(loaded)}">'
             f'<button type="button" class="rowhead">'
-            f'<span class="name">{safe}</span>'
+            f'<span class="name">{safe_label}</span>'
             f'<span class="pill {klass}">{badge}</span>'
             f'<span class="chev">›</span></button>'
-            f'<div class="body"><input type="password" name="{safe}" '
+            f'<div class="body">{desc_html}<input type="password" name="{safe}" '
             f'autocomplete="off" placeholder="{placeholder}"></div></div>'
         )
     note = ""
