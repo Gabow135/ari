@@ -216,3 +216,39 @@ async def test_plan_and_exec_argv_are_isolated(monkeypatch):
     for argv in seen:
         assert "--strict-mcp-config" in argv
         assert argv[argv.index("--setting-sources") + 1] == "project"
+
+
+async def test_execute_augments_instruction_for_skill_task():
+    seen = {}
+
+    async def exec_runner(instr, target, model):
+        seen["instr"] = instr
+        return '{"result": "done", "is_error": false}'
+
+    async def fake_collect(target_dir):
+        return ["skills/foo/skill.py"], ["abc1234"], None
+
+    coder = ClaudeCodeCoder(exec_runner=exec_runner)
+    coder._collect_git = fake_collect
+    plan = CodingPlan("s", "/repo", "create a skill that greets the user")
+    await coder.execute(plan, "ari/tg-skill")
+    assert "SKILL AUTHORING CONTRACT" in seen["instr"]
+    assert seen["instr"].startswith("create a skill")
+
+
+async def test_execute_leaves_non_skill_instruction_unchanged():
+    seen = {}
+
+    async def exec_runner(instr, target, model):
+        seen["instr"] = instr
+        return '{"result": "done", "is_error": false}'
+
+    async def fake_collect(target_dir):
+        return ["foo.py"], ["abc1234"], None
+
+    coder = ClaudeCodeCoder(exec_runner=exec_runner)
+    coder._collect_git = fake_collect
+    plan = CodingPlan("s", "/repo", "refactor the webhook handler")
+    await coder.execute(plan, "ari/tg-plain")
+    assert seen["instr"] == "refactor the webhook handler"
+    assert "SKILL AUTHORING CONTRACT" not in seen["instr"]
