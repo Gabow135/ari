@@ -25,14 +25,14 @@ shellcheck available locally; disclosed).
 Claude Code CLI.
 
 ## Tasks
-- [ ] T1 — pyproject: version 0.1.0 → 0.0.1; add `[project.scripts] ari = "ari.main:main"`.
-- [ ] T2 — install.sh (Linux/macOS/WSL2): detect OS + PM (brew/apt/dnf/pacman/zypper),
+- [x] T1 — pyproject: version 0.1.0 → 0.0.1; add `[project.scripts] ari = "ari.main:main"`.
+- [x] T2 — install.sh (Linux/macOS/WSL2): detect OS + PM (brew/apt/dnf/pacman/zypper),
       ensure prereqs, clone/update at ref, uv venv + editable install, `ari` launcher
       in ~/.local/bin, copy .env.example, print next steps. curl|bash-safe (non-interactive).
-- [ ] T3 — install.ps1 (Windows native): winget/scoop, same flow, `ari.cmd` + user PATH.
-- [ ] T4 — .github/workflows/release.yml: on `push: tags: v*` (+ workflow_dispatch),
+- [x] T3 — install.ps1 (Windows native): winget/scoop, same flow, `ari.cmd` + user PATH.
+- [x] T4 — .github/workflows/release.yml: on `push: tags: v*` (+ workflow_dispatch),
       create Release with generated notes, attach install.sh + install.ps1.
-- [ ] T5 — README: "Quick Install" section with the two one-liners.
+- [x] T5 — README: "Quick Install" section with the two one-liners.
 
 ## Defaults accepted by user
 - Install URL = raw.githubusercontent.com/Gabow135/ari/main/ (zero infra; domain later).
@@ -50,4 +50,10 @@ Claude Code CLI.
 2. `git tag v0.0.1 && git push origin v0.0.1` → workflow creates the Release.
 
 ## Progress / evidence
-- (pending commit on feat/source-installer)
+- All tasks T1–T5 done. Commit c8b21af on feat/source-installer.
+- Verification: `bash -n install.sh` → SYNTAX OK; release.yml → YAML OK.
+- Not verified locally: install.ps1 (no pwsh/shellcheck available) — manual review only.
+- SHIPPED: PR #1 merged to main (merge 75910a3); tag v0.0.1 pushed; Release
+  workflow run 36882662351 succeeded (18s). Release "Ari v0.0.1" published with
+  install.sh + install.ps1 assets: https://github.com/Gabow135/ari/releases/tag/v0.0.1
+- Follow-up: validate install.ps1 on a real Windows host (not runnable locally).
