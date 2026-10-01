@@ -1,6 +1,6 @@
 [project]
 name = "ari"
-version = "0.1.0"
+version = "0.0.1"
 requires-python = ">=3.11"
 dependencies = [
   "python-telegram-bot>=21",
@@ -23,6 +23,9 @@ dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6"]
 # conditions on Hugging Face for pyannote/speaker-diarization-3.1 and
 # pyannote/segmentation-3.0, using the HUGGINGFACE_TOKEN loaded in the vault.
 diarization = ["pyannote.audio>=3.1"]
+
+[project.scripts]
+ari = "ari.main:main"
 
 [build-system]
 requires = ["hatchling"]

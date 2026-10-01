@@ -1,0 +1,52 @@
+name: Release
+
+# Publish a GitHub Release whenever a version tag is pushed (e.g. v0.0.1).
+# The release ships the cross-platform source installers as assets; users run
+# them straight from raw.githubusercontent.com. One release serves Linux,
+# macOS, WSL2 and native Windows — no per-OS binaries are built.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.0.1). Must already exist.'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Ari ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            install.sh
+            install.ps1
+          body: |
+            ## Install
+
+            **Linux, macOS, WSL2**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/Gabow135/ari/main/install.sh | bash
+            ```
+
+            **Windows (native, PowerShell)**
+            ```powershell
+            iex (irm https://raw.githubusercontent.com/Gabow135/ari/main/install.ps1)
+            ```
+
+            The installer bootstraps Git, Python ≥3.11, Node/npm, uv and the
+            Claude Code CLI, then checks out Ari into `~/.ari` and puts an `ari`
+            command on your PATH. After installing: `claude login`, edit
+            `~/.ari/.env`, then run `ari`.
