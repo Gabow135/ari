@@ -39,14 +39,23 @@ class VaultWebMaintainer:
         self._lan_ip: str | None = None
         self._lock = threading.Lock()
         self._extra_names = extra_names
+        self._requested: set[str] = set()
 
     _NEVER_WRITABLE = {"ARI_FS_ROOT"}
 
     def _writable_names(self) -> list[str]:
-        names = configurable_secret_names(self._servers_json)
+        names = set(configurable_secret_names(self._servers_json))
         if self._extra_names is not None:
-            names = sorted((set(names) | set(self._extra_names())) - self._NEVER_WRITABLE)
+            names |= set(self._extra_names())
+        names = sorted((names | self._requested) - self._NEVER_WRITABLE)
         return names
+
+    def register_names(self, names) -> None:
+        with self._lock:
+            self._requested.update(
+                n for n in names if n and n not in self._NEVER_WRITABLE)
+            if self._server is not None:
+                self._server.set_names(self._writable_names())
 
     def new_link(self) -> str:
         with self._lock:
@@ -58,6 +67,8 @@ class VaultWebMaintainer:
                 self._server = VaultWebServer(self._bind, self._port, cert, key,
                                               self._vault, self._store, names)
                 self._server.start()
+            else:
+                self._server.set_names(self._writable_names())
             token = self._store.create()
             return f"https://{self._lan_ip}:{self._server.port}/v/{token}"
 

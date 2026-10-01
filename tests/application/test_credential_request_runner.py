@@ -19,6 +19,10 @@ class _Vault:
     def __init__(self, url="https://192.168.0.5:8765/v/tok", boom=False):
         self._url, self._boom = url, boom
         self.calls = 0
+        self.registered: list[list[str]] = []
+
+    def register_names(self, names):
+        self.registered.append(list(names))
 
     def new_link(self):
         self.calls += 1
@@ -65,3 +69,13 @@ async def test_new_link_failure_is_reported(requests):
     await runner()
     assert await requests.status_of(rid) == FAILED
     assert len(sent) == 1 and "No pude generar el link" in sent[0][1]
+
+
+async def test_register_names_called_before_new_link(requests):
+    """register_names is called with the parsed var names before new_link is invoked."""
+    await requests.add("42", "42", "quiero pasarte NOTION_API_KEY")
+    vault = _Vault()
+    runner, _ = _runner(requests, vault)
+    await runner()
+    assert vault.registered == [["NOTION_API_KEY"]]
+    assert vault.calls == 1

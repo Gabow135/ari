@@ -100,6 +100,41 @@ def test_security_headers_present_on_every_response(running):
     assert headers.get("X-Content-Type-Options") == "nosniff"
 
 
+def test_page_is_styled_and_csp_locks_scripts_to_a_hash(running):
+    srv, store, vault = running
+    tok = store.create()
+    status, body, headers = _get(srv, f"/v/{tok}")
+    assert status == 200
+    assert "<style" in body                        # the design is embedded
+    csp = headers.get("Content-Security-Policy", "")
+    assert "default-src 'none'" in csp             # everything else still denied
+    assert "style-src 'unsafe-inline'" in csp      # inline styles allowed
+    assert "script-src 'sha256-" in csp            # live-search JS pinned by hash
+    script_dir = next(d for d in csp.split(";") if d.strip().startswith("script-src"))
+    assert "'unsafe-inline'" not in script_dir     # only the hashed script runs
+
+
+def test_inline_script_hash_matches_csp(running):
+    import base64
+    import hashlib
+    import re
+
+    srv, store, vault = running
+    tok = store.create()
+    _, body, headers = _get(srv, f"/v/{tok}")
+    m = re.search(r"<script>(.*?)</script>", body, re.S)
+    assert m, "expected one inline <script> block"
+    digest = base64.b64encode(hashlib.sha256(m.group(1).encode("utf-8")).digest()).decode()
+    assert f"'sha256-{digest}'" in headers.get("Content-Security-Policy", "")
+
+
+def test_page_has_a_search_box(running):
+    srv, store, vault = running
+    tok = store.create()
+    _, body, _ = _get(srv, f"/v/{tok}")
+    assert 'type="search"' in body                 # the credential filter
+
+
 def test_trailing_slash_token_returns_200(running):
     srv, store, vault = running
     tok = store.create()
@@ -132,3 +167,25 @@ def test_plain_http_client_cannot_talk_to_tls_server(running):
     )):
         conn.request("GET", f"/v/{tok}")
         conn.getresponse()
+
+
+def test_set_names_updates_get_response(running):
+    """After set_names, GET form shows the new name."""
+    srv, store, vault = running
+    new_names = NAMES + ["NEW_TOKEN_KEY"]
+    srv.set_names(new_names)
+    tok = store.create()
+    status, body, _ = _get(srv, f"/v/{tok}")
+    assert status == 200
+    assert "NEW_TOKEN_KEY" in body
+
+
+def test_set_names_allows_post_of_new_name(running):
+    """After set_names, POST of the new name returns 200 and stores the value."""
+    srv, store, vault = running
+    new_names = NAMES + ["NEW_TOKEN_KEY"]
+    srv.set_names(new_names)
+    tok = store.create()
+    status, _ = _post(srv, f"/v/{tok}", {"NEW_TOKEN_KEY": "secret_value"})
+    assert status == 200
+    assert vault.get("NEW_TOKEN_KEY") == "secret_value"

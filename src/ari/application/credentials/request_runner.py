@@ -1,6 +1,7 @@
 import logging
 from datetime import timedelta
 
+from ari.application.credentials.requested_names import normalize_secret_names
 from ari.application.text_format import truncate
 from ari.domain.credentials.requests import DONE, FAILED, SKIPPED
 
@@ -20,6 +21,7 @@ class CredentialRequestRunner:
                 await self._requests.finish(req.id, SKIPPED, "stale")
                 continue
             try:
+                self._vault_web.register_names(normalize_secret_names(req.requested))
                 link = self._vault_web.new_link()
             except Exception as exc:
                 log.warning("credential link mint failed: %s", exc)

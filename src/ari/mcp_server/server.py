@@ -115,8 +115,10 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
     @tool("pedir_credenciales")
     async def pedir_credenciales(nombres: str) -> str:
         """(Solo el creador) Cuando tu creador quiera darte una credencial, API o
-        contraseña (p. ej. "quiero pasarte el api de groq"), prepara un link seguro para
-        que la cargue sin escribirla en el chat. nombres: qué credencial quiere cargar."""
+        contraseña, prepara un link seguro para que la cargue sin escribirla en el chat.
+        nombres: indica el nombre de la variable en UPPER_SNAKE (p. ej. NOTION_API_KEY);
+        si son varias, sepáralas con comas (p. ej. NOTION_API_KEY, GITHUB_TOKEN). Usar el
+        nombre exacto de la variable permite registrar credenciales nuevas en el formulario."""
         return await (await get_tools()).pedir_credenciales(nombres)
 
     @tool("ver_skills")
