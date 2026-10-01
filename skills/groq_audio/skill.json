@@ -9,6 +9,9 @@
   "required_secrets": [
     "GROQ_API_KEY"
   ],
+  "optional_secrets": [
+    "HUGGINGFACE_TOKEN"
+  ],
   "hooks": [
     "inbound_transform",
     "outbound_transform"

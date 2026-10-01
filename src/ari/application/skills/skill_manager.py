@@ -34,8 +34,10 @@ class _Loaded:
 class _Ctx:
     """Per-skill runtime context; secret() is scoped to declared required_secrets."""
 
-    def __init__(self, allowed: set[str], resolve, config: dict):
+    def __init__(self, allowed: set[str], resolve, config: dict,
+                 optional: set[str] | None = None):
         self._allowed, self._resolve, self._config = allowed, resolve, config
+        self._optional = optional or set()
 
     def secret(self, name: str) -> str:
         if name not in self._allowed:
@@ -44,6 +46,15 @@ class _Ctx:
         if value is None:
             raise KeyError(name)
         return value
+
+    def optional_secret(self, name: str) -> str | None:
+        """Like secret() but for a secret declared in ``optional_secrets``: returns
+        None when it is absent instead of raising, so a skill can light up an extra
+        feature only when the value is configured (e.g. diarization needs a token,
+        plain transcription does not)."""
+        if name not in self._allowed and name not in self._optional:
+            raise PermissionError(f"skill did not declare secret {name}")
+        return self._resolve(name)
 
     @property
     def config(self) -> dict:
@@ -149,7 +160,8 @@ class SkillManager:
         self._loaded = loaded
 
     def _ctx_for(self, m: dict) -> _Ctx:
-        return _Ctx(set(m.get("required_secrets", [])), self._resolve, dict(m.get("config", {})))
+        return _Ctx(set(m.get("required_secrets", [])), self._resolve, dict(m.get("config", {})),
+                    optional=set(m.get("optional_secrets", [])))
 
     def required_secret_names(self) -> list[str]:
         self._refresh()

@@ -67,10 +67,20 @@ Part B: direct inline or delegated writer (more isolated).
 - [x] A4 Routing: `route_message` + `CodingDeps` command branch («dale»/«no», command-priority, newest-wins) — 5 tests green, coding flow no regression
 - [x] A5 MCP: `proponer_comando` tool + `AriTools` + `ari_permissions` + `capabilities.py` + `SOUL.md` — 29 tests green (incl. updated contract tests)
 - [x] A6 Wiring: `main.py` `_post_init` (scheduler + deps + reset_taken) — import/boot OK, full non-slow suite **598 passed, 2 skipped**
-- [ ] A7 Commit terminal slice
-- [ ] B1 Skills framework: `optional_secret` / `optional_secrets`
-- [ ] B2 groq_audio: pyannote diarization + pyproject optional dep + manifest + fallback
+- [x] A7 Commit terminal slice — commit 71baa9a
+- [x] B1 Skills framework: `optional_secret` / `optional_secrets` — 4 tests green, skill_manager no regression
+- [x] B2 groq_audio: pyannote diarization + pyproject optional dep (`[diarization]`) + manifest + graceful fallback — 14 tests green (`_label_transcript` alignment, diarize/fallback paths with fakes)
 - [ ] B3 Commit diarización slice
+
+## Activation (manual, user-only — cannot be done/verified here)
+Real diarization needs two one-time steps from Gabriel:
+1. `pip install -e '.[diarization]'` in the Ari venv (pulls torch, heavy).
+2. Accept model conditions on Hugging Face for `pyannote/speaker-diarization-3.1`
+   and `pyannote/segmentation-3.0`, with the account behind the vault's
+   `HUGGINGFACE_TOKEN`.
+Until then groq_audio keeps transcribing plainly (graceful fallback). Note:
+`skills/` is outside ruff's configured `src`, so BLE001 on the skill's broad
+excepts is out of scope and matches the existing graceful-degradation pattern.
 
 NOTE on cross-store supersession: command pending and coding pending are separate
 PendingStore instances. route_message checks command first on «dale». A rare both-pending

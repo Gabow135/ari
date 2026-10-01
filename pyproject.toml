@@ -18,6 +18,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6"]
+# Speaker diarization for the groq_audio skill. Heavy (pulls torch); install with
+# `pip install -e '.[diarization]'`. Also needs the user to accept the model
+# conditions on Hugging Face for pyannote/speaker-diarization-3.1 and
+# pyannote/segmentation-3.0, using the HUGGINGFACE_TOKEN loaded in the vault.
+diarization = ["pyannote.audio>=3.1"]
 
 [build-system]
 requires = ["hatchling"]
