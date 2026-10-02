@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     vault_web_port: int = 8765
     vault_web_ttl_minutes: int = 10
     vault_web_bind: str = "0.0.0.0"
+    # Recall precision (Frente 1)
+    candidate_multiplier: int = 4
+    dedup_similarity: float = 0.98
+    rank_min_similarity: float = 0.3
+    rank_similarity_weight: float = 0.6
+    rank_recency_weight: float = 0.25
+    rank_importance_weight: float = 0.15
+    rank_recency_half_life_days: float = 30.0
 
     @property
     def owner_id_set(self) -> set[str]:

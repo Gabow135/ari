@@ -1,7 +1,10 @@
+from datetime import UTC, datetime
+
 import pytest
 
 from ari.application.handle_message import HandleMessage
 from ari.domain.agent.agent_service import AgentService
+from ari.domain.memory.entities import Recall
 from ari.domain.ports.gateway_port import IncomingMessage
 from tests.fakes import FakeEmbeddings, FakeLLM, FakeMemory
 
@@ -265,3 +268,44 @@ async def test_timeout_reraises_for_scheduled_tasks_so_they_count_as_failures():
                             agent=AgentService())
     with pytest.raises(LLMTimeoutError):
         await handler(IncomingMessage("u1", "c1", "hola"), allow_actions=False)
+
+
+# --- Recall precision (Frente 1) ---------------------------------------------
+
+async def test_retrieve_ranks_by_score_and_drops_below_threshold():
+    """_retrieve must rank candidates and discard those below the relevance
+    threshold — not just return the raw store order (the old cosine-only path)."""
+    now = datetime.now(UTC)
+    mem = FakeMemory()
+    mem._recalls = [
+        Recall(1, "u1", "high relevance", {}, created_at=now, score=0.9),
+        Recall(2, "u1", "irrelevant noise", {}, created_at=now, score=0.1),
+        Recall(3, "u1", "medium relevance", {}, created_at=now, score=0.5),
+    ]
+    handler = _handler(mem=mem)
+    recalls = await handler._retrieve("u1", "query")
+    contents = [r.content for r in recalls]
+    assert "irrelevant noise" not in contents  # below min_similarity → dropped
+    assert contents[0] == "high relevance"  # best-scored first
+    assert "medium relevance" in contents
+
+
+async def test_store_recall_skips_near_duplicate():
+    """A near-identical recall already in the store must not be re-inserted."""
+    now = datetime.now(UTC)
+    mem = FakeMemory()
+    mem._recalls = [
+        Recall(1, "u1", "User: hi\nAri: hello", {}, created_at=now, score=0.99),
+    ]
+    handler = _handler(mem=mem)
+    await handler._store_recall("u1", "hi", "hello")
+    assert len(mem._recalls) == 1  # dedup skipped the insert
+
+
+async def test_store_recall_persists_typed_metadata_when_not_duplicate():
+    """A genuinely new recall is stored with structured metadata, not {}."""
+    mem = FakeMemory()
+    handler = _handler(mem=mem)
+    await handler._store_recall("u1", "hi", "hello")
+    assert len(mem._recalls) == 1
+    assert mem._recalls[0].metadata == {"type": "exchange", "importance": 0.5}

@@ -76,7 +76,7 @@ class SqliteMemoryAdapter:
         # restricts KNN search to that partition — fully user-isolated at the
         # vector-index level, with results ordered by similarity (distance ASC).
         rows = await self._conn.execute_fetchall(
-            "SELECT r.id, r.user_id, r.content, r.metadata_json "
+            "SELECT r.id, r.user_id, r.content, r.metadata_json, r.created_at, v.distance "
             "FROM recalls_vec v "
             "JOIN recalls r ON r.id = v.id "
             "WHERE v.user_id = ? AND v.embedding MATCH ? AND k = ? "
@@ -84,7 +84,14 @@ class SqliteMemoryAdapter:
             (user_id, _pack(query_embedding), k),
         )
         return [
-            Recall(r["id"], r["user_id"], r["content"], json.loads(r["metadata_json"]))
+            Recall(
+                r["id"],
+                r["user_id"],
+                r["content"],
+                json.loads(r["metadata_json"]),
+                created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None,
+                score=1.0 / (1.0 + r["distance"]),
+            )
             for r in rows
         ]
 

@@ -27,7 +27,6 @@ from ari.application.credentials.request_runner import CredentialRequestRunner
 from ari.application.credentials.needs import missing_inbound_secrets
 from ari.application.missions.run_pending_missions import MissionRunner
 from ari.application.handle_message import HandleMessage
-from ari.domain.memory.recall_ranker import RankWeights, RecallRanker
 from ari.application.memory_maintainer import MemoryMaintainer
 from ari.application.outbox import OutboxFlusher
 from ari.application.schedule.heartbeat import Heartbeat
@@ -40,6 +39,7 @@ from ari.application.text_format import truncate
 from ari.application.tools.tool_policy import AriServerSpec, ToolPolicy
 from ari.config.settings import Settings
 from ari.domain.agent.agent_service import AgentService
+from ari.domain.memory.recall_ranker import RankWeights, RecallRanker
 from ari.domain.ports.gateway_port import IncomingMessage, OutgoingMessage
 from ari.domain.skills.models import InboundContext
 from ari.domain.schedule.quiet_hours import parse_window
