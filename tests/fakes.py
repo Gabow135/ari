@@ -16,6 +16,19 @@ class FakeLLM:
         return self.reply
 
 
+class MultiReplyFakeLLM:
+    """FakeLLM that returns different replies per call (in order), then repeats the last."""
+
+    def __init__(self, replies: list[str]):
+        self.replies = replies
+        self.calls: list[tuple[str, list[Message]]] = []
+
+    async def complete(self, system, messages, max_tokens=1024, toolset=None) -> str:
+        self.calls.append((system, list(messages)))
+        idx = min(len(self.calls) - 1, len(self.replies) - 1)
+        return self.replies[idx]
+
+
 class FakeEmbeddings:
     def __init__(self, dim: int = 4):
         self.dim = dim
@@ -31,6 +44,7 @@ class FakeMemory:
         self._recalls: list[Recall] = []
         self._facts: dict[tuple[str, str], Fact] = {}
         self._summaries: dict[str, Summary] = {}
+        self._history: list[dict] = []
         self.fail_retrieval = fail_retrieval
 
     async def recent_messages(self, user_id, limit):
@@ -58,6 +72,20 @@ class FakeMemory:
 
     async def delete_fact(self, user_id, key):
         return self._facts.pop((user_id, key), None) is not None
+
+    async def get_fact(self, user_id: str, key: str):
+        return self._facts.get((user_id, key))
+
+    async def add_fact_history(
+        self, user_id: str, key: str, old_value, new_value: str, resolution: str
+    ) -> None:
+        self._history.append(
+            {"user_id": user_id, "key": key, "old_value": old_value,
+             "new_value": new_value, "resolution": resolution}
+        )
+
+    async def get_fact_history(self, user_id: str, key: str) -> list[dict]:
+        return [h for h in self._history if h["user_id"] == user_id and h["key"] == key]
 
     async def get_summary(self, user_id):
         return self._summaries.get(user_id)

@@ -8,6 +8,7 @@ from ari.application.access.gate import normalize_code
 from ari.application.schedule.agenda_format import created_receipt, item_line
 from ari.application.text_format import truncate
 from ari.domain.access.entities import APPROVED, PENDING
+from ari.domain.memory.fact_keys import normalize_key
 from ari.domain.schedule.actions import ActionError, next_cron_run, parse_action
 from ari.domain.schedule.entities import ACTIVE, CANCELLED, PAUSED, REMINDER, RUNNING, TASK
 from ari.domain.tools.ari_permissions import allowed_ari_tools
@@ -122,14 +123,26 @@ class AriTools:
             return "No pude guardarlo: falta la clave o el valor."
         if len(clave) > 100 or len(valor) > 500:
             return "No pude guardarlo: es demasiado largo."
-        await self._memory.upsert_fact(self._a.user_id, clave, valor)
+        normalized = normalize_key(clave)
+        old = await self._memory.get_fact(self._a.user_id, normalized)
+        await self._memory.upsert_fact(self._a.user_id, normalized, valor)
+        if old is not None and old.value != valor:
+            await self._memory.add_fact_history(
+                self._a.user_id, normalized, old.value, valor, "manual"
+            )
+            return await self._receipt(f"🧠 Actualicé: {clave} = {valor} (antes: {old.value})")
+        old_value = old.value if old is not None else None
+        await self._memory.add_fact_history(
+            self._a.user_id, normalized, old_value, valor, "manual"
+        )
         return await self._receipt(f"🧠 Guardé: {clave} = {valor}")
 
     async def olvidar_dato(self, clave: str) -> str:
         if not self._allowed("olvidar_dato"):
             return DENIED
         clave = (clave or "").strip()
-        if not await self._memory.delete_fact(self._a.user_id, clave):
+        normalized = normalize_key(clave)
+        if not await self._memory.delete_fact(self._a.user_id, normalized):
             return f"No tenía guardado «{clave}»."
         return await self._receipt(f"🧹 Olvidé: {clave}")
 

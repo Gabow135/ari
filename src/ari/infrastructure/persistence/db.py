@@ -67,6 +67,12 @@ CREATE TABLE IF NOT EXISTS missions (
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_missions_status ON missions(status, id);
 CREATE INDEX IF NOT EXISTS idx_missions_user ON missions(user_id, status);
+
+CREATE TABLE IF NOT EXISTS facts_history (
+  id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, key TEXT NOT NULL,
+  old_value TEXT, new_value TEXT NOT NULL, resolution TEXT NOT NULL,
+  created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_facts_history_user ON facts_history(user_id, key);
 """
 
 

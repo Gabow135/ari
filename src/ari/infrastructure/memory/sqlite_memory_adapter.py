@@ -134,3 +134,29 @@ class SqliteMemoryAdapter:
                 (user_id, content, _now()),
             )
             await self._conn.commit()
+
+    async def get_fact(self, user_id: str, key: str):
+        rows = await self._conn.execute_fetchall(
+            "SELECT value FROM facts WHERE user_id = ? AND key = ?",
+            (user_id, key),
+        )
+        return Fact(user_id, key, rows[0]["value"]) if rows else None
+
+    async def add_fact_history(
+        self, user_id: str, key: str, old_value: str | None, new_value: str, resolution: str
+    ) -> None:
+        async with self._write_lock:
+            await self._conn.execute(
+                "INSERT INTO facts_history (user_id, key, old_value, new_value, resolution, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, key, old_value, new_value, resolution, _now()),
+            )
+            await self._conn.commit()
+
+    async def get_fact_history(self, user_id: str, key: str) -> list[dict]:
+        rows = await self._conn.execute_fetchall(
+            "SELECT old_value, new_value, resolution, created_at "
+            "FROM facts_history WHERE user_id = ? AND key = ? ORDER BY id",
+            (user_id, key),
+        )
+        return [dict(r) for r in rows]

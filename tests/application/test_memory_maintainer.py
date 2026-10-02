@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from ari.application.memory_maintainer import MemoryMaintainer
 from ari.domain.agent.message import Message
-from tests.fakes import FakeLLM, FakeMemory
+from tests.fakes import FakeLLM, FakeMemory, MultiReplyFakeLLM
 
 
 def _msg(user_id, role, content):
@@ -94,3 +94,123 @@ async def test_maybe_summarize_never_raises_on_llm_error():
     for i in range(3):
         await mem.append_message(_msg("u1", "user", f"msg {i}"))
     await maint.maybe_summarize("u1")  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# T4 — conflict judge
+# ---------------------------------------------------------------------------
+
+
+async def test_new_key_stored_with_resolution_new():
+    mem = FakeMemory()
+    # first call = extraction reply, no judge needed for new key
+    llm = FakeLLM(reply="city: Madrid")
+    maint = MemoryMaintainer(mem, llm)
+    await maint.extract_facts("u1", "vivo en Madrid")
+    assert (await mem.get_fact("u1", "city")).value == "Madrid"
+    history = await mem.get_fact_history("u1", "city")
+    assert len(history) == 1
+    assert history[0]["resolution"] == "new"
+    assert history[0]["old_value"] is None
+
+
+async def test_supersede_updates_fact_and_logs_history():
+    mem = FakeMemory()
+    await mem.upsert_fact("u1", "city", "Madrid")
+    # call 1: extraction returns "city: Barcelona"
+    # call 2: judge returns SUPERSEDE
+    llm = MultiReplyFakeLLM(["city: Barcelona", "SUPERSEDE"])
+    maint = MemoryMaintainer(mem, llm)
+    await maint.extract_facts("u1", "me mudé a Barcelona")
+    assert (await mem.get_fact("u1", "city")).value == "Barcelona"
+    history = await mem.get_fact_history("u1", "city")
+    assert len(history) == 1
+    assert history[0]["resolution"] == "supersede"
+    assert history[0]["old_value"] == "Madrid"
+    assert history[0]["new_value"] == "Barcelona"
+
+
+async def test_keep_leaves_old_value_but_logs_history():
+    mem = FakeMemory()
+    await mem.upsert_fact("u1", "city", "Madrid")
+    llm = MultiReplyFakeLLM(["city: Barcelona", "KEEP"])
+    maint = MemoryMaintainer(mem, llm)
+    await maint.extract_facts("u1", "estuve de visita en Barcelona")
+    assert (await mem.get_fact("u1", "city")).value == "Madrid"
+    history = await mem.get_fact_history("u1", "city")
+    assert len(history) == 1
+    assert history[0]["resolution"] == "keep"
+
+
+async def test_merge_stores_merged_value():
+    mem = FakeMemory()
+    await mem.upsert_fact("u1", "city", "Madrid")
+    merged_value = "Madrid y Barcelona"
+    llm = MultiReplyFakeLLM(["city: Barcelona", f"MERGE\n{merged_value}"])
+    maint = MemoryMaintainer(mem, llm)
+    await maint.extract_facts("u1", "también vivo en Barcelona")
+    assert (await mem.get_fact("u1", "city")).value == merged_value
+    history = await mem.get_fact_history("u1", "city")
+    assert history[0]["resolution"] == "merge"
+
+
+async def test_judge_exception_defaults_to_keep_and_still_logs():
+    mem = FakeMemory()
+    await mem.upsert_fact("u1", "city", "Madrid")
+
+    class BoomOnSecond(MultiReplyFakeLLM):
+        async def complete(self, system, messages, max_tokens=1024, toolset=None):
+            self.calls.append((system, list(messages)))
+            if len(self.calls) == 1:
+                return "city: Barcelona"
+            raise RuntimeError("judge down")
+
+    maint = MemoryMaintainer(mem, BoomOnSecond(["city: Barcelona"]))
+    await maint.extract_facts("u1", "text")  # must not raise
+    assert (await mem.get_fact("u1", "city")).value == "Madrid"
+    history = await mem.get_fact_history("u1", "city")
+    assert len(history) == 1
+    assert history[0]["resolution"] == "keep"
+
+
+async def test_unrecognized_judge_verdict_defaults_to_keep():
+    mem = FakeMemory()
+    await mem.upsert_fact("u1", "city", "Madrid")
+    llm = MultiReplyFakeLLM(["city: Barcelona", "DUNNO"])
+    maint = MemoryMaintainer(mem, llm)
+    await maint.extract_facts("u1", "text")
+    assert (await mem.get_fact("u1", "city")).value == "Madrid"
+    history = await mem.get_fact_history("u1", "city")
+    assert history[0]["resolution"] == "keep"
+
+
+async def test_same_value_does_nothing():
+    mem = FakeMemory()
+    await mem.upsert_fact("u1", "city", "Madrid")
+    llm = FakeLLM(reply="city: Madrid")
+    maint = MemoryMaintainer(mem, llm)
+    await maint.extract_facts("u1", "sigo en Madrid")
+    history = await mem.get_fact_history("u1", "city")
+    assert history == []
+
+
+async def test_existing_keys_included_in_extraction_prompt():
+    mem = FakeMemory()
+    await mem.upsert_fact("u1", "city", "Madrid")
+    await mem.upsert_fact("u1", "name", "Gabo")
+    llm = FakeLLM(reply="")
+    maint = MemoryMaintainer(mem, llm)
+    await maint.extract_facts("u1", "nothing new")
+    system_used, _msgs = llm.calls[0]
+    assert "city" in system_used
+    assert "name" in system_used
+
+
+async def test_key_normalization_in_extraction():
+    """Keys from the LLM are normalized before storage."""
+    mem = FakeMemory()
+    llm = FakeLLM(reply="Ciudad Actual: Sevilla")
+    maint = MemoryMaintainer(mem, llm)
+    await maint.extract_facts("u1", "vivo en Sevilla")
+    # The key should be normalized to "ciudad_actual"
+    assert (await mem.get_fact("u1", "ciudad_actual")).value == "Sevilla"

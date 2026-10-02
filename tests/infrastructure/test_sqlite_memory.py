@@ -87,3 +87,59 @@ async def test_retrieve_recalls_exposes_created_at_and_similarity_score(adapter)
     assert top.created_at is not None
     assert top.score is not None
     assert 0.0 < top.score <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# T2 — get_fact, add_fact_history, get_fact_history
+# ---------------------------------------------------------------------------
+
+
+async def test_get_fact_returns_stored_fact(adapter):
+    await adapter.upsert_fact("u1", "city", "Madrid")
+    fact = await adapter.get_fact("u1", "city")
+    assert fact is not None
+    assert fact.user_id == "u1"
+    assert fact.key == "city"
+    assert fact.value == "Madrid"
+
+
+async def test_get_fact_returns_none_for_missing_key(adapter):
+    result = await adapter.get_fact("u1", "nonexistent")
+    assert result is None
+
+
+async def test_get_fact_is_user_scoped(adapter):
+    await adapter.upsert_fact("u1", "city", "Madrid")
+    assert await adapter.get_fact("u2", "city") is None
+
+
+async def test_fact_history_roundtrip(adapter):
+    await adapter.add_fact_history("u1", "city", "Madrid", "Barcelona", "supersede")
+    history = await adapter.get_fact_history("u1", "city")
+    assert len(history) == 1
+    entry = history[0]
+    assert entry["old_value"] == "Madrid"
+    assert entry["new_value"] == "Barcelona"
+    assert entry["resolution"] == "supersede"
+    assert entry["created_at"]
+
+
+async def test_fact_history_new_entry_has_null_old_value(adapter):
+    await adapter.add_fact_history("u1", "city", None, "Madrid", "new")
+    history = await adapter.get_fact_history("u1", "city")
+    assert history[0]["old_value"] is None
+
+
+async def test_fact_history_ordered_by_id(adapter):
+    await adapter.add_fact_history("u1", "city", None, "Madrid", "new")
+    await adapter.add_fact_history("u1", "city", "Madrid", "Barcelona", "supersede")
+    history = await adapter.get_fact_history("u1", "city")
+    assert [h["new_value"] for h in history] == ["Madrid", "Barcelona"]
+
+
+async def test_fact_history_is_user_scoped(adapter):
+    await adapter.add_fact_history("u1", "city", None, "Madrid", "new")
+    await adapter.add_fact_history("u2", "city", None, "Lima", "new")
+    u1_history = await adapter.get_fact_history("u1", "city")
+    assert len(u1_history) == 1
+    assert u1_history[0]["new_value"] == "Madrid"

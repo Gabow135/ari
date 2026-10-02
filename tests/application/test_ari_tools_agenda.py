@@ -74,7 +74,8 @@ async def test_listar_and_cancel_only_own(deps):
 async def test_memory_tools(deps):
     t = _tools(deps)
     assert await t.recordar_dato("color favorito", "azul") == "🧠 Guardé: color favorito = azul"
-    assert "color favorito: azul" in await t.ver_datos()
+    # key is normalized to "color_favorito" internally; ver_datos shows the stored key
+    assert "color_favorito: azul" in await t.ver_datos()
     assert await t.olvidar_dato("color favorito") == "🧹 Olvidé: color favorito"
     assert "No tenía guardado" in await t.olvidar_dato("color favorito")
     assert "No tengo datos" in await t.ver_datos()
@@ -117,3 +118,43 @@ async def test_recordar_dato_value_too_long(deps):
     out = await _tools(deps).recordar_dato("a", "x" * 501)
     assert "demasiado largo" in out
     assert await log.receipts("t1") == []
+
+
+# ---------------------------------------------------------------------------
+# T5 — recordar_dato: history + receipt with old value
+# ---------------------------------------------------------------------------
+
+
+async def test_recordar_dato_first_write_shows_guardado(deps):
+    _, memory, _ = deps
+    t = _tools(deps)
+    out = await t.recordar_dato("color", "azul")
+    assert out == "🧠 Guardé: color = azul"
+    # No history entry expected for first write (key normalization: "color")
+    history = await memory.get_fact_history("u1", "color")
+    assert len(history) == 1
+    assert history[0]["resolution"] == "manual"
+    assert history[0]["old_value"] is None
+
+
+async def test_recordar_dato_overwrite_shows_old_value(deps):
+    _, memory, _ = deps
+    t = _tools(deps)
+    await t.recordar_dato("color", "azul")
+    out = await t.recordar_dato("color", "rojo")
+    assert out == "🧠 Actualicé: color = rojo (antes: azul)"
+    history = await memory.get_fact_history("u1", "color")
+    # Two history entries: one for first write ("manual"), one for overwrite ("manual")
+    assert len(history) == 2
+    assert history[1]["old_value"] == "azul"
+    assert history[1]["new_value"] == "rojo"
+    assert history[1]["resolution"] == "manual"
+
+
+async def test_recordar_dato_normalizes_key(deps):
+    _, memory, _ = deps
+    t = _tools(deps)
+    out = await t.recordar_dato("Color Favorito", "verde")
+    # key stored normalized but receipt shows original clave text
+    assert "Color Favorito" in out
+    assert (await memory.get_fact("u1", "color_favorito")).value == "verde"
