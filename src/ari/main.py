@@ -42,7 +42,7 @@ from ari.config.settings import Settings
 from ari.domain.agent.agent_service import AgentService
 from ari.domain.memory.recall_ranker import RankWeights, RecallRanker
 from ari.domain.ports.gateway_port import IncomingMessage, OutgoingMessage
-from ari.domain.skills.models import InboundContext
+from ari.domain.skills.models import InboundContext, RawInbound
 from ari.domain.schedule.quiet_hours import parse_window
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.claude_env import claude_cli_env
@@ -581,6 +581,25 @@ def main() -> None:
             return
         await _dispatch(update, text, from_voice=True)
 
+    async def _on_enroll(update, _context) -> None:
+        """/enroll <name>: start voice-profile enrollment via the voice_id skill."""
+        msg = update.effective_message
+        if msg is None or msg.from_user is None:
+            return
+        if not await _admit(msg):
+            return
+        is_owner = app.bot_data["gate"].is_owner(str(msg.from_user.id))
+        raw = RawInbound(
+            user_id=str(msg.from_user.id),
+            chat_id=str(msg.chat_id),
+            text=msg.text,
+        )
+        result = await app.bot_data["skills"].run_inbound(raw, is_owner)
+        if result is not None:
+            await _reply_parts(msg, result)
+        else:
+            await msg.reply_text("El skill de identificación de voz no está disponible.")
+
     async def _on_start(update, _context) -> None:
         """/start: greet approved users; hand a pairing code to everyone else."""
         msg = update.effective_message
@@ -680,6 +699,7 @@ def main() -> None:
         await _reply_parts(msg, lifecycle.request(action, str(msg.from_user.id)))
 
     # Slash commands reach _on_command; plain text reaches _on_message.
+    app.add_handler(CommandHandler("enroll", _on_enroll))
     app.add_handler(CommandHandler("start", _on_start))
     app.add_handler(CommandHandler("recordatorios", _on_reminders))
     app.add_handler(CommandHandler("conexiones", _on_connections))
