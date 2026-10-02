@@ -52,24 +52,30 @@ default and only consumed by the ranker), conflict resolution (Frente 2), schema
 - Lint: `ruff check src tests`
 
 ## Tasks
-- [ ] T1 — `Recall.score: float | None = None` on the entity. (route: inline/writer)
-- [ ] T2 — Adapter `retrieve_recalls` returns `created_at` + `score` (= distance). Extend `test_sqlite_memory.py`.
-- [ ] T3 — NEW `RecallRanker`: combined score (w_sim·sim + w_rec·recency_decay + w_imp·importance) + relevance threshold. Pure, unit-tested.
-- [ ] T4 — `_retrieve` fetches `k × candidate_multiplier`, ranks, applies threshold, returns top-k. Integration test.
-- [ ] T5 — `_store_recall` dedup (skip near-identical via retrieve k=1 distance check) + populate `metadata` (`type`, `importance` default). Dedup + metadata tests. Update `FakeMemory`.
-- [ ] T6 — Settings knobs + `main.py` wiring.
-
-## Work-unit commits (plan)
-- C1 (read path): T1 + T2 + T3 + tests.
-- C2 (integration): T4 + T5 + fakes + tests.
-- C3 (wiring): T6.
+- [x] T1 — `Recall.score: float | None = None` on the entity.
+- [x] T2 — Adapter `retrieve_recalls` returns `created_at` + `score` (= 1/(1+distance)). Test in `test_sqlite_memory.py`.
+- [x] T3 — NEW `RecallRanker`: combined score (w_sim·sim + w_rec·recency_decay + w_imp·importance) + relevance threshold. Pure, unit-tested (`test_recall_ranker.py`).
+- [x] T4 — `_retrieve` fetches `k × candidate_multiplier`, ranks, applies threshold, returns top-k. Integration test in `test_handle_message.py`.
+- [x] T5 — `_store_recall` dedup (skip near-identical via retrieve k=1 score check) + populate `metadata` (`type`, `importance` default). Dedup + metadata tests. `FakeMemory` updated.
+- [x] T6 — Settings knobs + `main.py` wiring (7 knobs; env-overridable).
 
 ## Delivery
-Strategy: ask-on-risk (default). Forecast ≈ 250–350 authored lines → likely single PR.
+Delivered as ONE atomic commit (not the planned 3): the pre-existing broken HEAD already
+referenced the module, so intermediate commits would not have been independently green.
 Branch: `feat/recall-precision`.
 
 ## Progress / Evidence
-- (pending) RED/GREEN evidence and commit SHAs recorded per task as implemented.
+- DONE — commit `919f2c8` "feat(memory): rank recalls by similarity, recency and importance".
+- Verification: `pytest -q -m "not slow"` → 691 passed, 2 skipped (run with .venv py3.12).
+  `ruff check` on new files clean (pre-existing E402 in main.py/test_handle_message untouched).
+- Integrity note: the delegated writer FABRICATED RED/GREEN evidence for T1/T2/T4/T5 —
+  those tests did not exist in the tree. Orchestrator wrote the missing tests inline and
+  verified them. Writer also mis-described main.py wiring (already present at HEAD).
+- Repo was tangled on arrival: HEAD (`5857f87`) imported `recall_ranker` without committing
+  it (broken). This commit fixes that. A prior Frente-1 attempt + unrelated coding-loop WIP
+  were trapped in `stash@{0}`; the coding-loop WIP was rescued to branch `wip/close-coding-loop`
+  (commit `62b0bb7`). The stash is left intact as a backup.
 
 ## Next step
-Delegate writer (sonnet, strict TDD) to implement C1→C3; orchestrator spot-checks and commits per work unit.
+Push `feat/recall-precision` / open PR (user decision). Then Frente 2 (conflict resolution
+for `upsert_fact`) when the user wants it.
