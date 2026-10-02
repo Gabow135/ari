@@ -55,6 +55,16 @@ async def test_prompt_uses_soul_and_role():
     assert "alma de test" in user_prompt and "/restart" not in user_prompt
 
 
+async def test_prompt_names_the_sender():
+    """Ari must know WHO is writing: the sender's display name reaches the prompt."""
+    llm = FakeLLM(reply="ok")
+    handler = HandleMessage(
+        memory=FakeMemory(), llm=llm, embeddings=FakeEmbeddings(), agent=AgentService(),
+        is_owner=lambda uid: uid == "boss")
+    await handler(IncomingMessage("boss", "c1", "hola", display_name="Gabriel"))
+    assert "Gabriel" in llm.calls[0][0]
+
+
 class _ContextOnly:
     async def context(self, user_id, context="chat", is_owner=False):
         return "## CONTEXTO-AGENDA"

@@ -77,7 +77,8 @@ class HandleMessage:
                 system = self._agent.build_prompt(
                     facts, summary, recalls, soul=self._soul(),
                     is_owner=is_owner, extra=extra,
-                    tools=turn.view if turn else None)
+                    tools=turn.view if turn else None,
+                    display_name=incoming.display_name)
                 try:
                     reply = await self._llm.complete(
                         system, history,
