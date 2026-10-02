@@ -27,6 +27,7 @@ from ari.application.credentials.request_runner import CredentialRequestRunner
 from ari.application.credentials.needs import missing_inbound_secrets
 from ari.application.missions.run_pending_missions import MissionRunner
 from ari.application.handle_message import HandleMessage
+from ari.application.memory.consolidator import MemoryConsolidator
 from ari.application.memory_maintainer import MemoryMaintainer
 from ari.application.outbox import OutboxFlusher
 from ari.application.schedule.heartbeat import Heartbeat
@@ -173,6 +174,7 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         ranker=ranker,
         candidate_multiplier=settings.candidate_multiplier,
         dedup_similarity=settings.dedup_similarity,
+        reinforce_delta=settings.reinforce_delta,
     )
     cert_dir = os.path.dirname(os.path.expanduser(settings.vault_path))
     skills = SkillManager(settings.skills_dir, vault)
@@ -353,9 +355,19 @@ def main() -> None:
         async def vault_web_sweep() -> None:
             c.vault_web.sweep_and_maybe_stop()
 
+        consolidator = MemoryConsolidator(
+            memory=c.memory,
+            kv=c.schedule_store,
+            clock=_utcnow,
+            interval_hours=settings.consolidate_interval_hours,
+            decay_factor=settings.decay_factor,
+            prune_floor=settings.prune_floor,
+            prune_min_age_days=settings.prune_min_age_days,
+        )
+
         scheduler = Scheduler([due, notices.tick, heartbeat, flusher, coding_runner,
                                command_runner, mission_runner, credential_runner,
-                               vault_web_sweep])
+                               vault_web_sweep, consolidator])
         scheduler.start()
         app.bot_data["scheduler"] = scheduler
 

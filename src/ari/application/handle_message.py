@@ -28,7 +28,8 @@ class HandleMessage:
                  actions=None, tools=None, turn_log=None, after_turn=None,
                  ranker: RecallRanker | None = None,
                  candidate_multiplier: int = 4,
-                 dedup_similarity: float = 0.98):
+                 dedup_similarity: float = 0.98,
+                 reinforce_delta: float = 0.1):
         self._memory = memory
         self._llm = llm
         self._embeddings = embeddings
@@ -46,6 +47,7 @@ class HandleMessage:
         self._ranker = ranker or RecallRanker()
         self._candidate_multiplier = candidate_multiplier
         self._dedup_similarity = dedup_similarity
+        self._reinforce_delta = reinforce_delta
 
     async def __call__(self, incoming: IncomingMessage,
                        allow_actions: bool = True) -> OutgoingMessage:
@@ -137,10 +139,17 @@ class HandleMessage:
             candidates = await self._memory.retrieve_recalls(
                 user_id, vec, self._k * self._candidate_multiplier
             )
-            return self._ranker.rank(candidates, datetime.now(UTC), self._k)
+            ranked = self._ranker.rank(candidates, datetime.now(UTC), self._k)
         except Exception:  # graceful degradation
             log.exception("recall retrieval failed; answering from working memory")
             return []
+        try:
+            for r in ranked:
+                if r.id is not None:
+                    await self._memory.bump_recall_importance(r.id, self._reinforce_delta)
+        except Exception:
+            log.exception("recall reinforcement failed")
+        return ranked
 
     async def _store_recall(self, user_id, text, reply):
         try:

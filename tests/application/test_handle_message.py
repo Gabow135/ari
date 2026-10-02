@@ -309,3 +309,47 @@ async def test_store_recall_persists_typed_metadata_when_not_duplicate():
     await handler._store_recall("u1", "hi", "hello")
     assert len(mem._recalls) == 1
     assert mem._recalls[0].metadata == {"type": "exchange", "importance": 0.5}
+
+
+# --- T2 (Frente 3) — _retrieve reinforcement ---------------------------------
+
+
+async def test_retrieve_reinforces_returned_recalls():
+    """_retrieve must call bump_recall_importance on each returned recall."""
+    now = datetime.now(UTC)
+    mem = FakeMemory()
+    mem._recalls = [
+        Recall(10, "u1", "high relevance", {"importance": 0.5}, created_at=now, score=0.9),
+        Recall(11, "u1", "medium relevance", {"importance": 0.5}, created_at=now, score=0.5),
+    ]
+    handler = HandleMessage(
+        memory=mem, llm=FakeLLM(reply="ok"), embeddings=FakeEmbeddings(),
+        agent=AgentService(), reinforce_delta=0.1,
+    )
+    ranked = await handler._retrieve("u1", "query")
+    # Both recalls are above min_similarity (0.3) so both are returned and reinforced.
+    assert len(ranked) == 2
+    # After reinforcement each importance must have risen by reinforce_delta.
+    for r in ranked:
+        updated = next(x for x in mem._recalls if x.id == r.id)
+        assert updated.metadata["importance"] == pytest.approx(0.6)
+
+
+async def test_retrieve_reinforcement_failure_does_not_prevent_return():
+    """A bump failure must not propagate: _retrieve still returns the ranked recalls."""
+
+    class BumpFailMemory(FakeMemory):
+        async def bump_recall_importance(self, recall_id, delta, cap=1.0):
+            raise RuntimeError("db gone")
+
+    now = datetime.now(UTC)
+    mem = BumpFailMemory()
+    mem._recalls = [
+        Recall(20, "u1", "some recall", {"importance": 0.5}, created_at=now, score=0.8),
+    ]
+    handler = HandleMessage(
+        memory=mem, llm=FakeLLM(reply="ok"), embeddings=FakeEmbeddings(),
+        agent=AgentService(), reinforce_delta=0.1,
+    )
+    ranked = await handler._retrieve("u1", "query")
+    assert len(ranked) == 1  # result returned despite bump failure

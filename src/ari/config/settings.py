@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     rank_recency_weight: float = 0.25
     rank_importance_weight: float = 0.15
     rank_recency_half_life_days: float = 30.0
+    # Importance + decay (Frente 3)
+    reinforce_delta: float = 0.1
+    decay_factor: float = 0.9
+    prune_floor: float = 0.15
+    prune_min_age_days: int = 7
+    consolidate_interval_hours: int = 6
 
     @property
     def owner_id_set(self) -> set[str]:

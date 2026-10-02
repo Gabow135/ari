@@ -143,3 +143,150 @@ async def test_fact_history_is_user_scoped(adapter):
     u1_history = await adapter.get_fact_history("u1", "city")
     assert len(u1_history) == 1
     assert u1_history[0]["new_value"] == "Madrid"
+
+
+# ---------------------------------------------------------------------------
+# T1 (Frente 3) — bump_recall_importance, decay_recalls, prune_recalls
+# ---------------------------------------------------------------------------
+
+
+async def test_bump_recall_importance_raises_value(adapter):
+    """bump_recall_importance must increase importance by delta and read back."""
+    await adapter.store_recall("u1", "content A", [1.0, 0.0, 0.0, 0.0],
+                               {"type": "exchange", "importance": 0.5})
+    results = await adapter.retrieve_recalls("u1", [1.0, 0.0, 0.0, 0.0], k=1)
+    rid = results[0].id
+    await adapter.bump_recall_importance(rid, 0.2)
+    rows = await adapter._conn.execute_fetchall(
+        "SELECT json_extract(metadata_json, '$.importance') AS imp FROM recalls WHERE id = ?",
+        (rid,),
+    )
+    assert rows[0]["imp"] == pytest.approx(0.7)
+
+
+async def test_bump_recall_importance_caps_at_1(adapter):
+    """Bumping past 1.0 must clamp to 1.0."""
+    await adapter.store_recall("u1", "content B", [1.0, 0.0, 0.0, 0.0],
+                               {"type": "exchange", "importance": 0.9})
+    results = await adapter.retrieve_recalls("u1", [1.0, 0.0, 0.0, 0.0], k=1)
+    rid = results[0].id
+    await adapter.bump_recall_importance(rid, 0.5)  # 0.9 + 0.5 = 1.4 → should cap at 1.0
+    rows = await adapter._conn.execute_fetchall(
+        "SELECT json_extract(metadata_json, '$.importance') AS imp FROM recalls WHERE id = ?",
+        (rid,),
+    )
+    assert rows[0]["imp"] == pytest.approx(1.0)
+
+
+async def test_decay_recalls_multiplies_unpinned_importance(adapter):
+    """decay_recalls must multiply unpinned recall importance by factor."""
+    await adapter.store_recall("u1", "unpinned", [1.0, 0.0, 0.0, 0.0],
+                               {"type": "exchange", "importance": 0.8})
+    results = await adapter.retrieve_recalls("u1", [1.0, 0.0, 0.0, 0.0], k=1)
+    rid = results[0].id
+    await adapter.decay_recalls(0.5)
+    rows = await adapter._conn.execute_fetchall(
+        "SELECT json_extract(metadata_json, '$.importance') AS imp FROM recalls WHERE id = ?",
+        (rid,),
+    )
+    assert rows[0]["imp"] == pytest.approx(0.4)
+
+
+async def test_decay_recalls_leaves_pinned_unchanged(adapter):
+    """decay_recalls must NOT touch recalls that have pinned=true in metadata."""
+    await adapter.store_recall("u1", "pinned recall", [1.0, 0.0, 0.0, 0.0],
+                               {"type": "exchange", "importance": 0.8, "pinned": True})
+    results = await adapter.retrieve_recalls("u1", [1.0, 0.0, 0.0, 0.0], k=1)
+    rid = results[0].id
+    await adapter.decay_recalls(0.5)
+    rows = await adapter._conn.execute_fetchall(
+        "SELECT json_extract(metadata_json, '$.importance') AS imp FROM recalls WHERE id = ?",
+        (rid,),
+    )
+    assert rows[0]["imp"] == pytest.approx(0.8)  # unchanged
+
+
+async def test_prune_recalls_removes_low_importance_old_unpinned(adapter):
+    """prune_recalls must delete rows that are low-importance, old, and not pinned."""
+    import json as _json
+    old_iso = "2020-01-01T00:00:00+00:00"
+    # Insert directly with an old created_at
+    cur = await adapter._conn.execute(
+        "INSERT INTO recalls (user_id, content, metadata_json, created_at) VALUES (?, ?, ?, ?)",
+        ("u1", "stale recall", _json.dumps({"importance": 0.1}), old_iso),
+    )
+    stale_id = cur.lastrowid
+    await adapter._conn.execute(
+        "INSERT INTO recalls_vec (id, user_id, embedding) VALUES (?, ?, ?)",
+        (stale_id, "u1", bytes(16)),  # 4 floats × 4 bytes = 16 zero bytes
+    )
+    await adapter._conn.commit()
+
+    cutoff = "2025-01-01T00:00:00+00:00"
+    count = await adapter.prune_recalls(0.2, cutoff)
+    assert count == 1
+
+    # Stale recall gone from both tables
+    recalls_rows = await adapter._conn.execute_fetchall(
+        "SELECT id FROM recalls WHERE id = ?", (stale_id,)
+    )
+    assert recalls_rows == []
+    vec_rows = await adapter._conn.execute_fetchall(
+        "SELECT id FROM recalls_vec WHERE id = ?", (stale_id,)
+    )
+    assert vec_rows == []
+
+
+async def test_prune_recalls_keeps_pinned(adapter):
+    """prune_recalls must keep pinned recalls even if old and low-importance."""
+    import json as _json
+    old_iso = "2020-01-01T00:00:00+00:00"
+    cur = await adapter._conn.execute(
+        "INSERT INTO recalls (user_id, content, metadata_json, created_at) VALUES (?, ?, ?, ?)",
+        ("u1", "pinned stale", _json.dumps({"importance": 0.05, "pinned": True}), old_iso),
+    )
+    pinned_id = cur.lastrowid
+    await adapter._conn.execute(
+        "INSERT INTO recalls_vec (id, user_id, embedding) VALUES (?, ?, ?)",
+        (pinned_id, "u1", bytes(16)),
+    )
+    await adapter._conn.commit()
+
+    cutoff = "2025-01-01T00:00:00+00:00"
+    count = await adapter.prune_recalls(0.2, cutoff)
+    assert count == 0
+
+    rows = await adapter._conn.execute_fetchall(
+        "SELECT id FROM recalls WHERE id = ?", (pinned_id,)
+    )
+    assert len(rows) == 1
+
+
+async def test_prune_recalls_keeps_recent(adapter):
+    """prune_recalls must keep low-importance recalls that are NOT old enough."""
+    await adapter.store_recall("u1", "recent but faded", [1.0, 0.0, 0.0, 0.0],
+                               {"importance": 0.05})
+    # cutoff is in the past relative to now, so the just-stored recall is newer
+    cutoff = "2020-01-01T00:00:00+00:00"
+    count = await adapter.prune_recalls(0.2, cutoff)
+    assert count == 0
+
+
+async def test_prune_recalls_keeps_high_importance(adapter):
+    """prune_recalls must keep old recalls whose importance is above floor."""
+    import json as _json
+    old_iso = "2020-01-01T00:00:00+00:00"
+    cur = await adapter._conn.execute(
+        "INSERT INTO recalls (user_id, content, metadata_json, created_at) VALUES (?, ?, ?, ?)",
+        ("u1", "important old", _json.dumps({"importance": 0.9}), old_iso),
+    )
+    imp_id = cur.lastrowid
+    await adapter._conn.execute(
+        "INSERT INTO recalls_vec (id, user_id, embedding) VALUES (?, ?, ?)",
+        (imp_id, "u1", bytes(16)),
+    )
+    await adapter._conn.commit()
+
+    cutoff = "2025-01-01T00:00:00+00:00"
+    count = await adapter.prune_recalls(0.2, cutoff)
+    assert count == 0

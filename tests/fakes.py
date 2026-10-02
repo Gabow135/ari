@@ -93,6 +93,46 @@ class FakeMemory:
     async def upsert_summary(self, user_id, content):
         self._summaries[user_id] = Summary(user_id, content)
 
+    async def bump_recall_importance(
+        self, recall_id: int, delta: float, cap: float = 1.0
+    ) -> None:
+        for i, r in enumerate(self._recalls):
+            if r.id == recall_id:
+                meta = dict(r.metadata)
+                meta["importance"] = min(cap, meta.get("importance", 0.5) + delta)
+                self._recalls[i] = Recall(
+                    r.id, r.user_id, r.content, meta,
+                    created_at=r.created_at, score=r.score,
+                )
+                return
+
+    async def decay_recalls(self, factor: float) -> None:
+        for i, r in enumerate(self._recalls):
+            if not r.metadata.get("pinned"):
+                meta = dict(r.metadata)
+                meta["importance"] = meta.get("importance", 0.5) * factor
+                self._recalls[i] = Recall(
+                    r.id, r.user_id, r.content, meta,
+                    created_at=r.created_at, score=r.score,
+                )
+
+    async def prune_recalls(self, floor: float, older_than_iso: str) -> int:
+        from datetime import timezone
+        cutoff = datetime.fromisoformat(older_than_iso)
+        if cutoff.tzinfo is None:
+            cutoff = cutoff.replace(tzinfo=timezone.utc)
+        before = len(self._recalls)
+        self._recalls = [
+            r for r in self._recalls
+            if not (
+                r.metadata.get("importance", 0.5) < floor
+                and r.created_at is not None
+                and r.created_at.astimezone(timezone.utc) < cutoff.astimezone(timezone.utc)
+                and not r.metadata.get("pinned")
+            )
+        ]
+        return before - len(self._recalls)
+
 
 class FakeVault:
     """In-memory SecretVault for registry/policy tests (no crypto, no disk)."""

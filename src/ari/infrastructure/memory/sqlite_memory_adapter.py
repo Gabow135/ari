@@ -160,3 +160,41 @@ class SqliteMemoryAdapter:
             (user_id, key),
         )
         return [dict(r) for r in rows]
+
+    async def bump_recall_importance(
+        self, recall_id: int, delta: float, cap: float = 1.0
+    ) -> None:
+        async with self._write_lock:
+            await self._conn.execute(
+                "UPDATE recalls SET metadata_json = json_set(metadata_json, '$.importance', "
+                "MIN(?, COALESCE(json_extract(metadata_json, '$.importance'), 0.5) + ?)) "
+                "WHERE id = ?",
+                (cap, delta, recall_id),
+            )
+            await self._conn.commit()
+
+    async def decay_recalls(self, factor: float) -> None:
+        async with self._write_lock:
+            await self._conn.execute(
+                "UPDATE recalls SET metadata_json = json_set(metadata_json, '$.importance', "
+                "COALESCE(json_extract(metadata_json, '$.importance'), 0.5) * ?) "
+                "WHERE COALESCE(json_extract(metadata_json, '$.pinned'), 0) <> 1",
+                (factor,),
+            )
+            await self._conn.commit()
+
+    async def prune_recalls(self, floor: float, older_than_iso: str) -> int:
+        async with self._write_lock:
+            rows = await self._conn.execute_fetchall(
+                "SELECT id FROM recalls "
+                "WHERE COALESCE(json_extract(metadata_json, '$.importance'), 0.5) < ? "
+                "AND created_at < ? "
+                "AND COALESCE(json_extract(metadata_json, '$.pinned'), 0) <> 1",
+                (floor, older_than_iso),
+            )
+            ids = [r["id"] for r in rows]
+            for rid in ids:
+                await self._conn.execute("DELETE FROM recalls_vec WHERE id = ?", (rid,))
+                await self._conn.execute("DELETE FROM recalls WHERE id = ?", (rid,))
+            await self._conn.commit()
+        return len(ids)
