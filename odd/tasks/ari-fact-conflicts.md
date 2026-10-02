@@ -44,12 +44,12 @@ Out of scope: Frente 3 (importance/decay). Recalls conflict handling (facts only
 - Lint: `ruff check src tests` (new files must be clean).
 
 ## Tasks
-- [ ] T1 — `facts_history` table in `_SCHEMA` (id, user_id, key, old_value, new_value, resolution, created_at) + index.
-- [ ] T2 — Port + adapter: `get_fact(user_id,key)->Fact|None`, `add_fact_history(user_id,key,old,new,resolution)`, `get_fact_history(user_id,key)->list[dict]`. Tests in test_sqlite_memory.py.
-- [ ] T3 — NEW `fact_keys.normalize_key` (lowercase, strip, spaces→_, collapse). Pure, unit-tested.
-- [ ] T4 — MemoryMaintainer conflict judge: normalize key; read existing; if value differs, LLM judge → supersede/keep/merge; apply + add_fact_history; pass existing keys to extraction prompt; safe default = keep+log on failure. Tests with FakeLLM returning verdicts.
-- [ ] T5 — `recordar_dato`: read old, upsert, add_fact_history; receipt shows old value when it changed. Tests.
-- [ ] T6 — FakeMemory: get_fact/add_fact_history/get_fact_history + in-memory history.
+- [x] T1 — `facts_history` table in `_SCHEMA` (id, user_id, key, old_value, new_value, resolution, created_at) + index.
+- [x] T2 — Port + adapter: `get_fact`, `add_fact_history`, `get_fact_history`. Tests in test_sqlite_memory.py.
+- [x] T3 — NEW `fact_keys.normalize_key` (lowercase, strip, whitespace→_). Pure, unit-tested.
+- [x] T4 — MemoryMaintainer conflict judge: normalize key; read existing; if value differs, LLM judge → supersede/keep/merge; apply + add_fact_history; pass existing keys to extraction prompt; safe default KEEP+log on failure/unknown verdict. Tests with MultiReplyFakeLLM.
+- [x] T5 — `recordar_dato` normalizes key, logs history, shows prior value in receipt (`olvidar_dato` normalizes too). Tests.
+- [x] T6 — FakeMemory: get_fact/add_fact_history/get_fact_history + in-memory history.
 
 ## Work-unit commits (plan)
 - C1 (foundation): T1 + T2 + T6 + tests.
@@ -68,7 +68,11 @@ Delegated writer (sonnet) with airtight TDD spec; orchestrator verifies EVERY cl
 Engram learning). Fix inline if fabrication recurs.
 
 ## Progress / Evidence
-- (pending)
+- DONE — commit `3a1c38d` "feat(memory): resolve fact conflicts with LLM judgment and history" on branch feat/fact-conflicts (from main 0ad2c1c). Delivered as ONE atomic feature commit (main clean; splitting shared fakes.py/test files across commits added risk without value).
+- Verification: `.venv/bin/python -m pytest -q -m "not slow"` → 718 passed, 2 skipped (+25 tests). `ruff check` on all changed/new files → all passed.
+- Writer was HONEST this time (git diff confirmed the named test files actually changed). Orchestrator still reviewed the judge logic by hand: safe KEEP default on empty/unknown/exception verified; history logged even on keep (recoverable); existing keys passed to extraction prompt.
+- NOT pushed to main manually — left for the live bot / user (bot auto-merges+pushes feature branches).
 
 ## Next step
-Delegate writer for C1→C3; verify + commit per work unit; leave merge/push to the user/bot.
+User merges/pushes (or the bot auto-merges feat/fact-conflicts). Then Frente 3: importance
+calculation + a decay/consolidation job on the existing Scheduler (main.py).
