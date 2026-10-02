@@ -9,6 +9,7 @@ class Recall:
     content: str
     metadata: dict = field(default_factory=dict)
     created_at: datetime | None = None
+    score: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from ari.domain.agent.message import Message
 from ari.domain.memory.entities import Fact, Recall, Summary
 
@@ -39,7 +41,9 @@ class FakeMemory:
         self._messages.append(message)
 
     async def store_recall(self, user_id, content, embedding, metadata):
-        self._recalls.append(Recall(None, user_id, content, metadata))
+        self._recalls.append(
+            Recall(None, user_id, content, metadata, created_at=datetime.now(UTC))
+        )
 
     async def retrieve_recalls(self, user_id, query_embedding, k):
         if self.fail_retrieval:

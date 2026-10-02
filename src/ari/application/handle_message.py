@@ -1,12 +1,13 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from ari.application.schedule.schedule_actions import extract_actions
 from ari.application.tools.tool_policy import no_turn
 from ari.domain.agent.agent_service import AgentService
 from ari.domain.agent.message import Message
 from ari.domain.memory.memory_port import MemoryPort
+from ari.domain.memory.recall_ranker import RecallRanker
 from ari.domain.ports.embeddings_port import EmbeddingsPort
 from ari.domain.ports.gateway_port import IncomingMessage, OutgoingMessage
 from ari.domain.ports.llm_port import LLMPort, LLMTimeoutError
@@ -24,7 +25,10 @@ class HandleMessage:
                  embeddings: EmbeddingsPort, agent: AgentService,
                  working_memory_size: int = 20, recall_top_k: int = 5,
                  maintainer=None, scheduler=None, soul=None, is_owner=None,
-                 actions=None, tools=None, turn_log=None, after_turn=None):
+                 actions=None, tools=None, turn_log=None, after_turn=None,
+                 ranker: RecallRanker | None = None,
+                 candidate_multiplier: int = 4,
+                 dedup_similarity: float = 0.98):
         self._memory = memory
         self._llm = llm
         self._embeddings = embeddings
@@ -39,6 +43,9 @@ class HandleMessage:
         self._tools = tools  # ToolPolicy | None
         self._turn_log = turn_log  # SqliteTurnLog | None
         self._after_turn = after_turn  # async () -> None, e.g. OutboxFlusher
+        self._ranker = ranker or RecallRanker()
+        self._candidate_multiplier = candidate_multiplier
+        self._dedup_similarity = dedup_similarity
 
     async def __call__(self, incoming: IncomingMessage,
                        allow_actions: bool = True) -> OutgoingMessage:
@@ -127,7 +134,10 @@ class HandleMessage:
     async def _retrieve(self, user_id, text):
         try:
             vec = (await self._embeddings.embed([text]))[0]
-            return await self._memory.retrieve_recalls(user_id, vec, self._k)
+            candidates = await self._memory.retrieve_recalls(
+                user_id, vec, self._k * self._candidate_multiplier
+            )
+            return self._ranker.rank(candidates, datetime.now(UTC), self._k)
         except Exception:  # graceful degradation
             log.exception("recall retrieval failed; answering from working memory")
             return []
@@ -136,7 +146,13 @@ class HandleMessage:
         try:
             content = f"User: {text}\nAri: {reply}"
             vec = (await self._embeddings.embed([content]))[0]
-            await self._memory.store_recall(user_id, content, vec, {})
+            # Dedup: skip insert if a near-identical recall already exists.
+            existing = await self._memory.retrieve_recalls(user_id, vec, 1)
+            if existing and existing[0].score is not None and existing[0].score >= self._dedup_similarity:
+                return
+            await self._memory.store_recall(
+                user_id, content, vec, {"type": "exchange", "importance": 0.5}
+            )
         except Exception:
             log.exception("storing recall failed")
 

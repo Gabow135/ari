@@ -75,3 +75,15 @@ async def test_delete_fact(adapter):
     assert await adapter.delete_fact("u1", "color") is True
     assert await adapter.delete_fact("u1", "color") is False
     assert await adapter.get_facts("u1") == []
+
+
+async def test_retrieve_recalls_exposes_created_at_and_similarity_score(adapter):
+    # Recall precision (Frente 1): retrieval must surface recency + a [0,1]
+    # similarity so the ranker can weight by more than raw cosine order.
+    await adapter.store_recall("u1", "hola mundo", [1.0, 0.0, 0.0, 0.0], {})
+    results = await adapter.retrieve_recalls("u1", [1.0, 0.0, 0.0, 0.0], k=5)
+    assert results
+    top = results[0]
+    assert top.created_at is not None
+    assert top.score is not None
+    assert 0.0 < top.score <= 1.0

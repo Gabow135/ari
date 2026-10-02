@@ -39,6 +39,7 @@ from ari.application.text_format import truncate
 from ari.application.tools.tool_policy import AriServerSpec, ToolPolicy
 from ari.config.settings import Settings
 from ari.domain.agent.agent_service import AgentService
+from ari.domain.memory.recall_ranker import RankWeights, RecallRanker
 from ari.domain.ports.gateway_port import IncomingMessage, OutgoingMessage
 from ari.domain.skills.models import InboundContext
 from ari.domain.schedule.quiet_hours import parse_window
@@ -152,6 +153,13 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     schedule_store = SqliteScheduleStore(conn)
     actions = ScheduleActions(schedule_store, tz, settings.max_items_per_user, clock=_utcnow)
     agent, soul = AgentService(), SoulLoader(settings.soul_dir)
+    ranker = RecallRanker(RankWeights(
+        similarity=settings.rank_similarity_weight,
+        recency=settings.rank_recency_weight,
+        importance=settings.rank_importance_weight,
+        recency_half_life_days=settings.rank_recency_half_life_days,
+        min_similarity=settings.rank_min_similarity,
+    ))
     handler = HandleMessage(
         memory=memory, llm=llm, embeddings=embeddings, agent=agent,
         working_memory_size=settings.working_memory_size,
@@ -162,6 +170,9 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         actions=actions,
         tools=tools,
         turn_log=turn_log,
+        ranker=ranker,
+        candidate_multiplier=settings.candidate_multiplier,
+        dedup_similarity=settings.dedup_similarity,
     )
     cert_dir = os.path.dirname(os.path.expanduser(settings.vault_path))
     skills = SkillManager(settings.skills_dir, vault)
