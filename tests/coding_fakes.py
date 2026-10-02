@@ -2,9 +2,11 @@ from ari.domain.coding.entities import CodingInstruction, CodingPlan, CodingResu
 
 
 class FakeCoder:
-    def __init__(self, plan_summary: str = "do X", fail: bool = False):
+    def __init__(self, plan_summary: str = "do X", fail: bool = False,
+                 changed_files: list[str] | None = None):
         self.plan_summary = plan_summary
         self.fail = fail
+        self._changed_files = changed_files if changed_files is not None else ["f.py"]
         self.planned: list[tuple[CodingInstruction, str]] = []
         self.executed: list[tuple[str, CodingPlan]] = []
 
@@ -17,4 +19,5 @@ class FakeCoder:
         self.executed.append((branch, plan))
         if self.fail:
             return CodingResult(ok=False, branch=branch, detail="boom")
-        return CodingResult(ok=True, branch=branch, changed_files=["f.py"], commits=["deadbee"])
+        return CodingResult(ok=True, branch=branch, changed_files=self._changed_files,
+                            commits=["deadbee"])

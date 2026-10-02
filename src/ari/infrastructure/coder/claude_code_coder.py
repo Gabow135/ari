@@ -4,6 +4,7 @@ import logging
 
 from ari.domain.coding.entities import CodingInstruction, CodingPlan, CodingResult
 from ari.infrastructure.claude_bin import resolve_claude_bin
+from ari.infrastructure.coder.skill_prompt import augment_for_skill
 from ari.infrastructure.llm.stream_json import STREAM_ARGS, run_streaming
 
 log = logging.getLogger("ari.claude_code_coder")
@@ -72,7 +73,7 @@ class ClaudeCodeCoder:
         """Execute the plan using the Claude CLI with editing tools enabled."""
         try:
             raw = await self._exec_runner(
-                plan.instruction_text, plan.target_dir, self._model
+                augment_for_skill(plan.instruction_text), plan.target_dir, self._model
             )
             data = json.loads(raw)
             if data.get("is_error"):

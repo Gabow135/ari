@@ -2,8 +2,7 @@ import json
 import textwrap
 
 from ari.application.skills.skill_manager import SkillManager
-from ari.domain.skills.models import Attachment, InboundContext, RawInbound
-from ari.domain.ports.gateway_port import OutgoingMessage
+from ari.domain.skills.models import Attachment, RawInbound
 from tests.fakes import FakeVault
 
 
@@ -30,7 +29,8 @@ def _write_skill(root, name, *, enabled=True, required=None, body=None, owner_on
 
 
 def test_active_when_secret_present_and_runs_inbound():
-    import tempfile, pathlib
+    import pathlib
+    import tempfile
     root = pathlib.Path(tempfile.mkdtemp())
     _write_skill(root, "a", required=["A_KEY"])
     m = SkillManager(str(root), vault=FakeVault({"A_KEY": "v"}), env={})
@@ -39,7 +39,8 @@ def test_active_when_secret_present_and_runs_inbound():
 
 
 async def test_run_inbound_returns_transcript():
-    import tempfile, pathlib
+    import pathlib
+    import tempfile
     root = pathlib.Path(tempfile.mkdtemp())
     _write_skill(root, "a", required=["A_KEY"])
     m = SkillManager(str(root), vault=FakeVault({"A_KEY": "v"}), env={})
@@ -49,7 +50,8 @@ async def test_run_inbound_returns_transcript():
 
 
 def test_missing_secret_is_needs_secrets_and_not_loaded():
-    import tempfile, pathlib
+    import pathlib
+    import tempfile
     root = pathlib.Path(tempfile.mkdtemp())
     _write_skill(root, "a", required=["A_KEY"])
     m = SkillManager(str(root), vault=FakeVault({}), env={})
@@ -58,7 +60,8 @@ def test_missing_secret_is_needs_secrets_and_not_loaded():
 
 
 def test_required_secret_names_are_unioned_and_deduped():
-    import tempfile, pathlib
+    import pathlib
+    import tempfile
     root = pathlib.Path(tempfile.mkdtemp())
     _write_skill(root, "a", required=["A_KEY", "SHARED"])
     _write_skill(root, "b", required=["SHARED", "B_KEY"])
@@ -67,7 +70,8 @@ def test_required_secret_names_are_unioned_and_deduped():
 
 
 def test_broken_skill_is_isolated_as_failed():
-    import tempfile, pathlib
+    import pathlib
+    import tempfile
     root = pathlib.Path(tempfile.mkdtemp())
     _write_skill(root, "ok")
     _write_skill(root, "bad", body="raise RuntimeError('boom')\n")
@@ -78,7 +82,8 @@ def test_broken_skill_is_isolated_as_failed():
 
 
 async def test_owner_only_skill_hidden_from_non_owner():
-    import tempfile, pathlib
+    import pathlib
+    import tempfile
     root = pathlib.Path(tempfile.mkdtemp())
     _write_skill(root, "a", owner_only=True)
     m = SkillManager(str(root), vault=FakeVault({}), env={})
@@ -89,7 +94,8 @@ async def test_owner_only_skill_hidden_from_non_owner():
 
 
 async def test_secret_scoping_rejects_undeclared():
-    import tempfile, pathlib
+    import pathlib
+    import tempfile
     body = textwrap.dedent("""
         class S:
             def __init__(self, config): pass
@@ -108,7 +114,8 @@ async def test_secret_scoping_rejects_undeclared():
 
 
 def test_set_enabled_flips_manifest_and_reloads():
-    import tempfile, pathlib
+    import pathlib
+    import tempfile
     root = pathlib.Path(tempfile.mkdtemp())
     _write_skill(root, "a", enabled=True)
     m = SkillManager(str(root), vault=FakeVault({}), env={})
@@ -116,3 +123,43 @@ def test_set_enabled_flips_manifest_and_reloads():
     assert m.set_enabled("a", False) is True
     assert m.list()[0].enabled is False
     assert m.set_enabled("nope", True) is False
+
+
+def test_reload_picks_up_new_skill():
+    import pathlib
+    import tempfile
+    root = pathlib.Path(tempfile.mkdtemp())
+    _write_skill(root, "alpha")
+    m = SkillManager(str(root), vault=FakeVault({}), env={})
+    # Add a second skill AFTER construction
+    _write_skill(root, "beta")
+    names = m.reload()
+    assert "beta" in names
+    assert "beta" in [s.name for s in m.list()]
+
+
+def test_reload_returns_only_active_names():
+    import pathlib
+    import tempfile
+    root = pathlib.Path(tempfile.mkdtemp())
+    _write_skill(root, "enabled_skill", enabled=True)
+    _write_skill(root, "disabled_skill", enabled=False)
+    m = SkillManager(str(root), vault=FakeVault({}), env={})
+    names = m.reload()
+    assert "enabled_skill" in names
+    assert "disabled_skill" not in names
+
+
+def test_reload_drops_removed_skill():
+    import pathlib
+    import shutil
+    import tempfile
+    root = pathlib.Path(tempfile.mkdtemp())
+    _write_skill(root, "to_remove")
+    _write_skill(root, "to_keep")
+    m = SkillManager(str(root), vault=FakeVault({}), env={})
+    shutil.rmtree(str(root / "to_remove"))
+    names = m.reload()
+    assert "to_remove" not in names
+    assert "to_remove" not in [s.name for s in m.list()]
+    assert "to_keep" in names

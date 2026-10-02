@@ -234,6 +234,16 @@ class SkillManager:
                 deliveries.extend(out)
         return deliveries
 
+    def reload(self) -> list[str]:
+        """Force a full rebuild (ignoring the mtime stamp) and return the names of
+        skills that are now active (loaded and usable). Used after Ari merges a coding
+        task so the running process picks up a newly created/edited skill without a
+        restart, and can report what went live."""
+        self._rebuild()
+        self._stamps = self._stamp()
+        return [l.status.name for l in self._loaded
+                if l.instance is not None and l.status.state == "active"]
+
     def set_enabled(self, name: str, enabled: bool) -> bool:
         for p in self._manifest_paths():
             try:
