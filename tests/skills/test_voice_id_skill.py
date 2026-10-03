@@ -83,6 +83,58 @@ async def test_enroll_at_only_returns_usage(tmp_path):
     assert "Uso:" in result
 
 
+# ---- natural-language enroll (no /enroll command) ----------------------------
+
+
+async def test_natural_text_enroll_sets_pending(tmp_path):
+    skill = _mod().VoiceIdSkill({"profiles_dir": str(tmp_path)})
+    result = await skill.on_inbound(_raw_text("guardá mi voz como Gabriel"), _Ctx())
+    assert result is not None
+    assert "Gabriel" in result
+    pending = json.loads((tmp_path / "_pending.json").read_text())
+    assert pending["name"] == "Gabriel"
+    assert pending["chat_id"] == "2"
+
+
+async def test_natural_voice_enroll_one_shot(tmp_path):
+    # A voice note that SAYS the phrase enrolls from that same note, no /enroll.
+    mod = _mod()
+
+    async def fake_transcribe(self, att, api_key, ctx):
+        return "guardá mi voz como Gabriel"
+
+    mod.VoiceIdSkill._transcribe = fake_transcribe
+    skill = mod.VoiceIdSkill(
+        {"profiles_dir": str(tmp_path)},
+        embedder_factory=_fake_embedder(np.array([1.0, 0.0, 0.0])),
+    )
+    result = await skill.on_inbound(
+        _raw_voice(), _Ctx(secrets={"HUGGINGFACE_TOKEN": "tok", "GROQ_API_KEY": "gk"})
+    )
+    assert result is not None
+    assert "Gabriel" in result
+    assert (tmp_path / "Gabriel.npy").exists()
+
+
+async def test_natural_voice_non_enroll_does_not_enroll(tmp_path):
+    # A normal voice note (not an enroll phrase) must not create a profile.
+    mod = _mod()
+
+    async def fake_transcribe(self, att, api_key, ctx):
+        return "hola, ¿cómo andás?"
+
+    mod.VoiceIdSkill._transcribe = fake_transcribe
+    skill = mod.VoiceIdSkill(
+        {"profiles_dir": str(tmp_path)},
+        embedder_factory=_fake_embedder(np.array([1.0, 0.0, 0.0])),
+    )
+    result = await skill.on_inbound(
+        _raw_voice(), _Ctx(secrets={"HUGGINGFACE_TOKEN": "tok", "GROQ_API_KEY": "gk"})
+    )
+    assert result is None
+    assert not list(tmp_path.glob("*.npy"))
+
+
 # ---- enrollment completion (voice note after /enroll) ------------------------
 
 
@@ -255,3 +307,40 @@ async def test_voice_no_profiles_returns_none(tmp_path):
 async def test_none_text_returns_none(tmp_path):
     skill = _mod().VoiceIdSkill({"profiles_dir": str(tmp_path)})
     assert await skill.on_inbound(RawInbound(user_id="1", chat_id="2"), _Ctx()) is None
+
+
+# ---- natural-language enroll intent parser -----------------------------------
+
+
+@pytest.mark.parametrize(
+    "phrase,expected",
+    [
+        ("guardá mi voz como Gabriel", "Gabriel"),
+        ("guarda mi voz como gabriel", "Gabriel"),
+        ("Ari, aprendé mi voz como Gabo", "Gabo"),
+        ("registrá la voz de Pedro", "Pedro"),
+        ("guardá la voz de María José", "María José"),
+        ("aprende mi voz como @Gabriel", "Gabriel"),
+        ("soy Gabriel, guardá mi voz", "Gabriel"),
+        ("guardá mi voz, Ana", "Ana"),
+        ("guardá mi voz como Gabriel por favor", "Gabriel"),
+        ("reconocé mi voz como Gabriel y avisame", "Gabriel"),
+    ],
+)
+def test_parse_enroll_intent_positive(phrase, expected):
+    assert _mod()._parse_enroll_intent(phrase) == expected
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "",
+        "hola, cómo andás",
+        "guardá mi voz",  # no name
+        "mandá un mensaje a Gabriel",  # no voice intent
+        "me gusta tu voz",  # no enroll verb
+        "reconocé mi voz",  # verb + voz but no name
+    ],
+)
+def test_parse_enroll_intent_negative(phrase):
+    assert _mod()._parse_enroll_intent(phrase) is None

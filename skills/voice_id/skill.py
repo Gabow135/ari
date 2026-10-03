@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 
 _PROFILES_DIR = "data/voice_profiles"
@@ -7,6 +8,48 @@ _PENDING_FILE = "_pending.json"
 _ENROLL_TIMEOUT = 300
 
 _UNSET = object()
+
+# Natural-language enroll ("guardá mi voz como Gabriel") — an alternative to the
+# /enroll command. Requires an enroll verb, the word "voz", and a name; anything
+# else falls through so normal messages still reach the agent.
+_ENROLL_VERB = re.compile(r"\b(?:guard|aprend|registr|enroll|reconoc|memoriz)\w*", re.IGNORECASE)
+_NAME_PATTERNS = (
+    re.compile(r"\bmi voz\s+como\s+(?P<name>.+)$", re.IGNORECASE),
+    re.compile(r"\bla voz de\s+(?P<name>.+)$", re.IGNORECASE),
+    re.compile(r"\bmi voz\s*[,:]\s*(?P<name>.+)$", re.IGNORECASE),
+    re.compile(r"\bsoy\s+(?P<name>.+?)[,.]?\s+\w*(?:guard|aprend|registr|enroll|reconoc|memoriz)",
+               re.IGNORECASE),
+)
+# Cut everything from a conjunction or politeness filler onward so the captured
+# name stays just the name ("Gabriel y avisame" -> "Gabriel").
+_NAME_STOP = re.compile(r"\s+(?:y|e|por favor|porfa|gracias|ahora|dale|ya)\b.*$", re.IGNORECASE)
+
+
+def _clean_name(raw: str) -> str | None:
+    name = _NAME_STOP.sub("", raw.strip()).strip()
+    name = re.sub(r"[.,;:!¡¿?]+$", "", name).strip().lstrip("@").strip()
+    if not name or len(name) > 40:
+        return None
+    return name.title()
+
+
+def _parse_enroll_intent(text: str) -> str | None:
+    """Return the name to enroll from a natural-language phrase, or None.
+
+    A match needs an enroll verb, the word "voz", and a name, e.g.
+    "guardá mi voz como Gabriel", "registrá la voz de Pedro", "soy Ana, aprendé
+    mi voz". Phrases without a name (just "guardá mi voz") return None.
+    """
+    t = (text or "").strip()
+    if not t or "voz" not in t.lower() or not _ENROLL_VERB.search(t):
+        return None
+    for pat in _NAME_PATTERNS:
+        m = pat.search(t)
+        if m:
+            name = _clean_name(m.group("name"))
+            if name:
+                return name
+    return None
 
 
 def _build_pyannote_embedder(token):
@@ -124,11 +167,19 @@ class VoiceIdSkill:
 
     async def on_inbound(self, raw, ctx):
         text = (raw.text or "").strip()
+        att = raw.attachment
 
         if text.lower().startswith("/enroll"):
             return await self._handle_enroll_command(text, raw)
 
-        att = raw.attachment
+        # Natural-language enroll in a text message: remember the name and ask for
+        # a voice note (the pending completes on the next note, as with /enroll).
+        if text and (att is None or att.kind not in ("voice", "audio")):
+            name = _parse_enroll_intent(text)
+            if name:
+                return self._start_enrollment(name, raw)
+            return None
+
         if att is None or att.kind not in ("voice", "audio"):
             return None
 
@@ -144,11 +195,23 @@ class VoiceIdSkill:
         if pending:
             return await self._complete_enrollment(att, token, pending, profiles_dir, ctx)
 
+        # One transcription, reused for both the natural-language enroll check and
+        # (below) the identification label — so a normal note is transcribed once.
+        groq_key = ctx.optional_secret("GROQ_API_KEY")
+        transcript = await self._transcribe(att, groq_key, ctx) if groq_key else None
+
+        if transcript:
+            name = _parse_enroll_intent(transcript)
+            if name:
+                return await self._complete_enrollment(
+                    att, token, {"name": name}, profiles_dir, ctx)
+
         profiles = _load_profiles(profiles_dir)
         if not profiles:
             return None
 
-        return await self._identify_speaker(att, token, profiles, threshold, ctx)
+        return await self._identify_speaker(
+            att, token, profiles, threshold, ctx, transcript=transcript)
 
     async def _handle_enroll_command(self, text, raw):
         parts = text.split(maxsplit=1)
@@ -157,13 +220,14 @@ class VoiceIdSkill:
         name = parts[1].lstrip("@").strip()
         if not name:
             return "Uso: /enroll Nombre (o @Nombre)"
+        return self._start_enrollment(name, raw)
 
+    def _start_enrollment(self, name, raw):
         profiles_dir = self._cfg.get("profiles_dir", _PROFILES_DIR)
         os.makedirs(profiles_dir, exist_ok=True)
         pending = {"name": name, "chat_id": raw.chat_id, "ts": time.time()}
         with open(os.path.join(profiles_dir, _PENDING_FILE), "w", encoding="utf-8") as f:
             json.dump(pending, f)
-
         return f"Listo. Envía una nota de voz para enrollar a {name}."
 
     async def _complete_enrollment(self, att, token, pending, profiles_dir, ctx):
@@ -187,7 +251,7 @@ class VoiceIdSkill:
             ctx.log.warning("voice_id: enrollment failed: %s", exc)
             return None
 
-    async def _identify_speaker(self, att, token, profiles, threshold, ctx):
+    async def _identify_speaker(self, att, token, profiles, threshold, ctx, transcript=None):
         try:
             embedder = self._get_embedder(token)
             if embedder is None:
@@ -196,11 +260,12 @@ class VoiceIdSkill:
             speaker = _identify(embedding, profiles, threshold)
             if speaker is None:
                 return None
-            groq_key = ctx.optional_secret("GROQ_API_KEY")
-            if groq_key:
-                transcript = await self._transcribe(att, groq_key, ctx)
-                if transcript:
-                    return f"**{speaker}:** {transcript}"
+            if transcript is None:
+                groq_key = ctx.optional_secret("GROQ_API_KEY")
+                if groq_key:
+                    transcript = await self._transcribe(att, groq_key, ctx)
+            if transcript:
+                return f"**{speaker}:** {transcript}"
             return f"**{speaker}:** (nota de voz)"
         except Exception as exc:
             ctx.log.warning("voice_id: identification failed: %s", exc)
