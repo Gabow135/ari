@@ -122,6 +122,37 @@ async def test_enrollment_clears_pending_after_save(tmp_path):
     assert "Ana" in result
 
 
+async def test_enroll_without_pyannote_warns_user(tmp_path):
+    # embedder factory returns None → pyannote.audio unavailable
+    skill = _mod().VoiceIdSkill(
+        {"profiles_dir": str(tmp_path)},
+        embedder_factory=lambda token: None,
+    )
+    await skill.on_inbound(_raw_text("/enroll Gabriel"), _Ctx())
+    result = await skill.on_inbound(
+        _raw_voice(), _Ctx(secrets={"HUGGINGFACE_TOKEN": "tok"})
+    )
+    # Must tell the user instead of silently returning None
+    assert result is not None
+    assert "pyannote" in result.lower()
+    # No profile saved, and the stuck pending is cleared so the user isn't limbo'd
+    assert not (tmp_path / "Gabriel.npy").exists()
+    assert not (tmp_path / "_pending.json").exists()
+
+
+async def test_identify_without_pyannote_returns_none(tmp_path):
+    # A normal voice note (no pending) must still fall through to transcription
+    np.save(str(tmp_path / "Gabriel.npy"), np.array([1.0, 0.0, 0.0], dtype=float))
+    skill = _mod().VoiceIdSkill(
+        {"profiles_dir": str(tmp_path)},
+        embedder_factory=lambda token: None,
+    )
+    result = await skill.on_inbound(
+        _raw_voice(), _Ctx(secrets={"HUGGINGFACE_TOKEN": "tok"})
+    )
+    assert result is None
+
+
 async def test_expired_pending_is_ignored(tmp_path):
     emb = np.array([1.0, 0.0])
     skill = _mod().VoiceIdSkill(

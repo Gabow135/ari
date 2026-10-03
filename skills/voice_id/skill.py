@@ -16,11 +16,15 @@ def _build_pyannote_embedder(token):
     pyannote is not installed or the model fails to load (e.g. token not accepted).
     """
     try:
-        from pyannote.audio import Inference
+        from pyannote.audio import Inference, Model
     except Exception:
         return None
     try:
-        model = Inference("pyannote/embedding", window="whole", use_auth_token=token)
+        # pyannote.audio 4.x: Inference wraps a loaded Model, and the HuggingFace
+        # token is passed to Model.from_pretrained (the 3.x `use_auth_token` kwarg
+        # was removed).
+        model = Model.from_pretrained("pyannote/embedding", token=token)
+        inference = Inference(model, window="whole")
     except Exception:
         return None
 
@@ -37,7 +41,7 @@ def _build_pyannote_embedder(token):
                 f.write(audio_bytes)
                 path = f.name
             try:
-                return np.array(model(path)).flatten()
+                return np.array(inference(path)).flatten()
             finally:
                 os.remove(path)
 
@@ -166,7 +170,15 @@ class VoiceIdSkill:
         try:
             embedder = self._get_embedder(token)
             if embedder is None:
-                return None
+                _clear_pending(profiles_dir)
+                ctx.log.warning(
+                    "voice_id: enrollment unavailable — pyannote.audio not installed"
+                )
+                return (
+                    "No pude enrollar la voz: falta el componente de reconocimiento "
+                    "(pyannote.audio). Instala el extra «diarization» "
+                    "(uv sync --all-extras) y reinicia Ari."
+                )
             embedding = await embedder(att.data, att.mime)
             _save_profile(profiles_dir, pending["name"], embedding)
             _clear_pending(profiles_dir)
