@@ -68,6 +68,7 @@ def _update(user_id, text, replies):
 async def wired(monkeypatch):
     app = _FakeApp()
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    monkeypatch.setenv("ARI_LOG_FILE", "")  # console only: main() must not write ./logs in tests
     monkeypatch.setattr(telegram.ext.Application, "builder", lambda: _FakeBuilder(app))
     routed = []
 
@@ -131,6 +132,7 @@ def _run_main_with(monkeypatch, steps):
     app = _FakeApp()
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
     monkeypatch.setenv("ARI_OWNER_IDS", "42")
+    monkeypatch.setenv("ARI_LOG_FILE", "")  # console only: main() must not write ./logs in tests
     monkeypatch.setattr(telegram.ext.Application, "builder", lambda: _FakeBuilder(app))
     relaunches, replies = [], []
     monkeypatch.setattr(main_mod, "relaunch", lambda chat: relaunches.append(chat))

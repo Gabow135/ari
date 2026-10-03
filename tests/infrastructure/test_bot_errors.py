@@ -68,6 +68,7 @@ class _FakeBuilder:
 def test_main_registers_the_conflict_handler(monkeypatch):
     app = _FakeApp()
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    monkeypatch.setenv("ARI_LOG_FILE", "")  # console only: main() must not write ./logs in tests
     monkeypatch.setattr(telegram.ext.Application, "builder", lambda: _FakeBuilder(app))
 
     main_mod.main()

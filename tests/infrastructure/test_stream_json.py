@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import sys
 
@@ -103,3 +104,12 @@ async def test_timeout_raises_llm_timeout_error():
     from ari.domain.ports.llm_port import LLMTimeoutError
     with pytest.raises(LLMTimeoutError):
         await run_streaming([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)
+
+
+async def test_timeout_logs_cli_stderr_tail(caplog):
+    from ari.domain.ports.llm_port import LLMTimeoutError
+    script = ("import sys, time; sys.stderr.write('MCP email server failed to start\\n'); "
+              "sys.stderr.flush(); time.sleep(30)")
+    with caplog.at_level(logging.WARNING), pytest.raises(LLMTimeoutError):
+        await run_streaming([sys.executable, "-c", script], timeout=0.5)
+    assert "email server failed to start" in caplog.text

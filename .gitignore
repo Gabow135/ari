@@ -24,6 +24,11 @@ env/
 *.sqlite
 *.sqlite3
 
+# Logs (rotating file + rotated backups)
+logs/
+*.log
+*.log.*
+
 # Voice profiles (biometric data — never commit)
 data/voice_profiles/*.npy
 data/voice_profiles/_pending.json

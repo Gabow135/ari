@@ -1,14 +1,20 @@
 import asyncio
 import json
+import logging
 import os
 
 from ari.domain.ports.llm_port import LLMTimeoutError
 from ari.domain.ports.progress_port import TEXT, THINKING, TOOL, ProgressEvent, emit_progress
 
+log = logging.getLogger("ari.llm.stream")
+
 # Flags that make `claude -p` print one JSON event per line as it works.
 STREAM_ARGS = ["--output-format", "stream-json", "--verbose", "--include-partial-messages"]
 # Tool results arrive as single (possibly huge) lines; asyncio's default is 64 KiB.
 _LINE_LIMIT = 32 * 1024 * 1024
+# How much of the CLI's stderr to log when a turn times out — enough to show the
+# MCP server that hung without dumping the whole stream.
+_STDERR_TAIL = 2000
 
 
 def _tool_detail(inp: dict) -> str:
@@ -45,6 +51,15 @@ def parse_line(line: str) -> tuple[ProgressEvent | None, str | None]:
     return None, None
 
 
+async def _collect_stderr(task: "asyncio.Future[bytes]") -> bytes:
+    """Await the stderr-drain task, tolerating a kill that interrupts the read."""
+    try:
+        return await task
+    except Exception:  # noqa: BLE001 — stderr is best-effort diagnostics
+        task.cancel()
+        return b""
+
+
 async def run_streaming(argv: list[str], stdin: bytes | None = None,
                         cwd: str | None = None, timeout: float | None = None,
                         env: dict | None = None) -> str:
@@ -57,9 +72,11 @@ async def run_streaming(argv: list[str], stdin: bytes | None = None,
         *argv, cwd=cwd, env=env, limit=_LINE_LIMIT,
         stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    # Drain stderr concurrently so a chatty CLI never blocks on a full pipe, and
+    # so the tail survives a timeout kill (that's where a hung MCP server speaks).
+    stderr_task = asyncio.ensure_future(proc.stderr.read())
 
-    async def consume() -> tuple[str | None, bytes]:
-        stderr_task = asyncio.ensure_future(proc.stderr.read())
+    async def consume() -> str | None:
         if stdin is not None:
             proc.stdin.write(stdin)
             await proc.stdin.drain()
@@ -71,16 +88,23 @@ async def run_streaming(argv: list[str], stdin: bytes | None = None,
                 emit_progress(event)
             if res is not None:
                 result = res
-        err = await stderr_task
-        await proc.wait()
-        return result, err
+        return result
 
     try:
-        result, err = await asyncio.wait_for(consume(), timeout=timeout)
+        result = await asyncio.wait_for(consume(), timeout=timeout)
     except TimeoutError:
         proc.kill()
         await proc.wait()
+        err = await _collect_stderr(stderr_task)
+        tail = err.decode(errors="replace").strip()
+        if tail:
+            log.warning("claude timed out after %ss; CLI stderr tail:\n%s",
+                        timeout, tail[-_STDERR_TAIL:])
+        else:
+            log.warning("claude timed out after %ss (no CLI stderr)", timeout)
         raise LLMTimeoutError(f"claude timed out after {timeout}s") from None
+    err = await stderr_task
+    await proc.wait()
     if proc.returncode != 0:
         raise RuntimeError(f"claude CLI failed (exit {proc.returncode}): "
                            f"{err.decode(errors='replace')[:500]}")

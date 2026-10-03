@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     mcp_config: str = "./mcp/servers.json"
     skills_dir: str = "./skills"
     chat_timeout_seconds: int = 180
+    # Logging: persistent rotating file so runtime behavior (chat-turn timeouts
+    # above all) can be followed after the fact. Empty log_file = console only.
+    log_file: str = "./logs/ari.log"
+    log_level: str = "INFO"
     # Secrets vault (filesystem MCP root ARI_FS_ROOT is read raw by the registry)
     vault_key: str = ""
     vault_path: str = "~/.ari/vault.enc"

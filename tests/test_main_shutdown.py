@@ -79,6 +79,7 @@ class _FakeDue:
 def _wire(monkeypatch):
     app = _FakeApp()
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    monkeypatch.setenv("ARI_LOG_FILE", "")  # console only: main() must not write ./logs in tests
     monkeypatch.setattr(telegram.ext.Application, "builder", lambda: _FakeBuilder(app))
     return app
 

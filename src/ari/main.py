@@ -46,6 +46,7 @@ from ari.domain.skills.models import InboundContext, RawInbound
 from ari.domain.schedule.quiet_hours import parse_window
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.claude_env import claude_cli_env
+from ari.infrastructure.logging_setup import setup_logging
 from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
 from ari.infrastructure.coder.verifier import CoderVerifier
 from ari.infrastructure.coder.workspace import Workspace
@@ -188,6 +189,7 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
 
 def main() -> None:
     settings = Settings()
+    setup_logging(settings.log_file, settings.log_level)  # now logs persist to a file
     env = cli_env(settings)  # computed once: warns once when no token
     tz = ZoneInfo(settings.timezone)
     quiet = parse_window(settings.quiet_hours)
