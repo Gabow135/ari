@@ -54,7 +54,7 @@ a later feature.)
 ## Tasks
 - [x] **T1 — Settings:** add `max_concurrent_chats` (8) and
   `max_background_agents` (3) to `Settings`, with a defaults test.
-- [ ] **T2 — KeyedLocks:** per-key async lock registry; same key serializes,
+- [x] **T2 — KeyedLocks:** per-key async lock registry; same key serializes,
   different keys run concurrently.
 - [ ] **T3 — AgentPool:** bounded-semaphore async context manager; caps
   concurrency to N, queues the rest; configurable size.
@@ -79,6 +79,9 @@ a later feature.)
 - **T1 (Settings)** ✅ TDD RED (`AttributeError: 'Settings' object has no attribute
   'max_concurrent_chats'`) → GREEN (`2 passed`). Test:
   `tests/config/test_settings_concurrency.py`.
+- **T2 (KeyedLocks)** ✅ TDD RED (`ModuleNotFoundError: ari.application.concurrency`)
+  → GREEN (`3 passed`). Module: `src/ari/application/concurrency/keyed_locks.py`;
+  test: `tests/application/test_keyed_locks.py`.
 
 ## Next step
-Implement T2 (KeyedLocks) with TDD.
+Implement T3 (AgentPool) with TDD.
