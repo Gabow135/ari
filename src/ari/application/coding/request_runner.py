@@ -19,10 +19,11 @@ class CodingRequestRunner:
     chat reply (this runs from the post-turn hook) is never held up."""
 
     def __init__(self, requests, request_coding, pending_store, send, spawn, clock,
-                 progress=None, max_age: timedelta = timedelta(hours=1)):
+                 progress=None, max_age: timedelta = timedelta(hours=1), pool=None):
         self._requests, self._request_coding = requests, request_coding
         self._pending, self._send, self._spawn = pending_store, send, spawn
         self._clock, self._progress, self._max_age = clock, progress, max_age
+        self._pool = pool  # AgentPool | None — caps concurrent plan generations
 
     async def __call__(self) -> None:
         for req in await self._requests.claim_pending():
@@ -47,7 +48,7 @@ class CodingRequestRunner:
         try:
             progress = (self._progress(req.chat_id) if self._progress
                         else contextlib.nullcontext())
-            async with progress:
+            async with (self._pool or contextlib.nullcontext()), progress:
                 reply = await self._request_coding(req.user_id, req.instruction, req.target,
                                                     proposed=True)
         except asyncio.CancelledError:

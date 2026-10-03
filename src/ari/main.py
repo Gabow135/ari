@@ -26,6 +26,7 @@ from ari.application.command.request_runner import CommandRequestRunner
 from ari.application.credentials.request_runner import CredentialRequestRunner
 from ari.application.credentials.needs import missing_inbound_secrets
 from ari.application.missions.run_pending_missions import MissionRunner
+from ari.application.concurrency.agent_pool import AgentPool
 from ari.application.concurrency.keyed_locks import KeyedLocks
 from ari.application.handle_message import HandleMessage
 from ari.application.memory.consolidator import MemoryConsolidator
@@ -228,6 +229,11 @@ def main() -> None:
             except Exception as exc:  # noqa: BLE001 — best-effort notification
                 logging.warning("could not send restart notice: %s", exc)
 
+        # Bounded pool shared by all background agents (missions, scheduled
+        # tasks, coding) so a flood never spawns unbounded `claude` subprocesses
+        # and the interactive chat (capped separately) is never starved.
+        agent_pool = AgentPool(settings.max_background_agents)
+
         # Coding infrastructure
         store = PendingStore()
         workspace = Workspace(settings.allowed_root)
@@ -291,7 +297,8 @@ def main() -> None:
         coding_requests = SqliteCodingRequests(c.conn)
         coding_runner = CodingRequestRunner(
             coding_requests, request_coding, store, send, spawn, _utcnow,
-            progress=lambda chat_id: ProgressMessage(app.bot, int(chat_id)))
+            progress=lambda chat_id: ProgressMessage(app.bot, int(chat_id)),
+            pool=agent_pool)
         command_requests = SqliteCommandRequests(c.conn)
         command_runner = CommandRequestRunner(command_requests, command_store, send, _utcnow)
         credential_requests = SqliteCredentialRequests(c.conn)
@@ -328,7 +335,8 @@ def main() -> None:
                                   allow_actions=False)
             return out.text
 
-        due = RunDueItems(c.schedule_store, send, run_task, notices.task_paused, tz, _utcnow)
+        due = RunDueItems(c.schedule_store, send, run_task, notices.task_paused, tz,
+                          _utcnow, pool=agent_pool)
         app.bot_data["due"] = due
 
         # Orphaned per-turn MCP configs (e.g. a crash between write and the
@@ -357,7 +365,7 @@ def main() -> None:
         stranded_missions = await missions.reset_running()
         if stranded_missions:
             log.info("reset %d stranded mission(s) to pending", len(stranded_missions))
-        mission_runner = MissionRunner(missions, c.handler, send, spawn)
+        mission_runner = MissionRunner(missions, c.handler, send, spawn, pool=agent_pool)
 
         async def vault_web_sweep() -> None:
             c.vault_web.sweep_and_maybe_stop()

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from ari.application.concurrency.agent_pool import AgentPool
 from ari.application.coding.pending_store import PendingStore
 from ari.application.coding.request_runner import BUSY, CodingRequestRunner
 from ari.domain.coding.entities import CodingInstruction, CodingPlan, PendingAction
@@ -26,7 +27,7 @@ async def requests():
     await conn.close()
 
 
-def _runner(requests, request_coding, pending=None, clock=None):
+def _runner(requests, request_coding, pending=None, clock=None, pool=None):
     sent, tasks = [], []
 
     async def send(chat_id, text):
@@ -36,7 +37,8 @@ def _runner(requests, request_coding, pending=None, clock=None):
         tasks.append(asyncio.ensure_future(coro))
 
     runner = CodingRequestRunner(requests, request_coding, pending or PendingStore(), send,
-                                 spawn, clock or Clock(datetime.now(timezone.utc)))
+                                 spawn, clock or Clock(datetime.now(timezone.utc)),
+                                 pool=pool)
     return runner, sent, tasks
 
 
@@ -54,6 +56,31 @@ async def test_plans_in_background_and_sends_the_reply(requests):
     assert calls == [("42", "agrega /ping", None)]
     assert sent[0][0] == "42" and sent[0][1].startswith("Plan para")
     assert await requests.status_of(rid) == DONE
+
+
+async def test_pool_serializes_planning_across_users(requests):
+    pool = AgentPool(1)
+    current = peak = 0
+    release = asyncio.Event()
+
+    async def request_coding(user_id, text, target, proposed=False):
+        nonlocal current, peak
+        current += 1
+        peak = max(peak, current)
+        await release.wait()
+        current -= 1
+        return "Plan para `x`:\n1. hacer\n\nResponde *dale*."
+
+    # Different users so both get a planning slot (same user would be SKIPPED busy).
+    await requests.add("1", "1", "a", None)
+    await requests.add("2", "2", "b", None)
+    runner, _, tasks = _runner(requests, request_coding, pool=pool)
+    await runner()
+    await asyncio.sleep(0.05)
+    assert peak == 1  # pool size 1: one plan generated at a time
+    release.set()
+    await asyncio.gather(*tasks)
+    assert peak == 1
 
 
 async def test_runner_does_not_block_while_planning(requests):

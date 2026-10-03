@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from ari.application.concurrency.agent_pool import AgentPool
 from ari.application.schedule.run_due_items import RunDueItems
 from ari.domain.schedule.entities import ACTIVE, CANCELLED, DONE, PAUSED, REMINDER, TASK
 from ari.infrastructure.persistence.db import connect
@@ -28,7 +29,7 @@ async def store():
     await conn.close()
 
 
-def _runner(store, clock, run_task=None):
+def _runner(store, clock, run_task=None, pool=None):
     sent, paused = [], []
 
     async def send(chat_id, text):
@@ -40,7 +41,8 @@ def _runner(store, clock, run_task=None):
     async def on_paused(item, reason):
         paused.append((item.id, reason))
 
-    due = RunDueItems(store, send, run_task or default_task, on_paused, TZ, clock)
+    due = RunDueItems(store, send, run_task or default_task, on_paused, TZ, clock,
+                      pool=pool)
     return due, sent, paused
 
 
@@ -132,6 +134,30 @@ async def test_slow_task_does_not_delay_reminders(store):
     release.set()
     await due.drain()
     assert any(t.startswith("🔁 Tarea") for _, t in sent)
+
+
+async def test_pool_serializes_concurrent_tasks(store):
+    pool = AgentPool(1)
+    current = peak = 0
+    release = asyncio.Event()
+
+    async def run(item):
+        nonlocal current, peak
+        current += 1
+        peak = max(peak, current)
+        await release.wait()
+        current -= 1
+        return "ok"
+
+    await store.add("u1", "c1", TASK, "a", T0, None)
+    await store.add("u2", "c2", TASK, "b", T0, None)
+    due, _, _ = _runner(store, Clock(T0), run_task=run, pool=pool)
+    await due()
+    await asyncio.sleep(0.05)
+    assert peak == 1  # pool size 1: only one task's heavy work runs at a time
+    release.set()
+    await due.drain()
+    assert peak == 1
 
 
 async def test_store_failure_on_one_item_does_not_stop_others(store):

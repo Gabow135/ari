@@ -60,7 +60,7 @@ a later feature.)
   concurrency to N, queues the rest; configurable size.
 - [x] **T4 — Wire L1:** set `concurrent_updates(max_concurrent_chats)` on the
   builder and acquire the per-user lock around the dispatch turn.
-- [ ] **T5 — Wire L2:** construct one `AgentPool` in `_post_init`, inject it into
+- [x] **T5 — Wire L2:** construct one `AgentPool` in `_post_init`, inject it into
   the three runners, and acquire it around each background turn.
 
 ## Acceptance criteria
@@ -95,5 +95,23 @@ a later feature.)
   builders. Regression: `20 passed` across `test_main_concurrency`,
   `test_main_access`, `test_main_shutdown`, `test_bot_errors`.
 
+- **T5 (wire L2)** ✅ Route: inline (mechanical, nearly identical change per
+  runner; TDD evidence critical). TDD RED (`TypeError: unexpected keyword
+  argument 'pool'` for all three) → GREEN (`3 passed`): each runner, given
+  `AgentPool(1)`, keeps peak concurrency at 1 across two background items.
+  Added `pool=None` to `MissionRunner`, `RunDueItems`, `CodingRequestRunner` and
+  wrapped each heavy call in `async with (self._pool or
+  contextlib.nullcontext())`. Constructed one `AgentPool(max_background_agents)`
+  in `_post_init` and injected it into all three. Tests:
+  `tests/application/test_mission_runner.py`, plus pool cases in
+  `test_run_due_items.py` and `test_coding_request_runner.py`.
+
+## Final verification
+- Full suite: **766 passed, 4 skipped** (`uv run pytest`).
+- Lint: new `concurrency/` package and all new test files are ruff-clean. The
+  repo has a large pre-existing ruff baseline (206 findings) unrelated to this
+  change; this feature added none.
+
 ## Next step
-Implement T5 (wire L2: runners acquire the AgentPool) with TDD.
+Feature complete. L3 (warm/persistent MCP to kill per-turn cold start) remains a
+separate future feature.

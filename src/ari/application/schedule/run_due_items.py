@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 from datetime import timedelta
 
@@ -18,9 +19,10 @@ class RunDueItems:
     tasks run as background coroutines so a slow Claude turn never delays
     anyone else's reminder. ``send`` must never raise."""
 
-    def __init__(self, store, send, run_task, on_paused, tz, clock):
+    def __init__(self, store, send, run_task, on_paused, tz, clock, pool=None):
         self._store, self._send, self._run = store, send, run_task
         self._on_paused, self._tz, self._clock = on_paused, tz, clock
+        self._pool = pool  # AgentPool | None — caps concurrent heavy task turns
         self._inflight: set[asyncio.Task] = set()
 
     async def __call__(self) -> None:
@@ -50,7 +52,8 @@ class RunDueItems:
 
     async def _run_task(self, item: ScheduleItem, now) -> None:
         try:
-            reply = await self._run(item)
+            async with (self._pool or contextlib.nullcontext()):
+                reply = await self._run(item)
         except Exception as exc:  # noqa: BLE001 — isolate each item
             log.exception("scheduled task #%s failed", item.id)
             try:

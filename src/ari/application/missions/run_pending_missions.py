@@ -1,6 +1,7 @@
 """Background runner for missions: claims PENDING, executes via the message handler,
 notifies the user. Plugs into the Scheduler like RunDueItems."""
 import asyncio
+import contextlib
 import logging
 
 from ari.domain.missions.entities import CANCELLED, DONE, FAILED, MAX_FAILURES, PAUSED, Mission
@@ -18,17 +19,19 @@ _PAUSE_NOTICE = ("⚠️ La misión #{id} falló {max} veces y quedó pausada.\n
 class MissionRunner:
     """One scheduler tick: claims all PENDING missions and runs them in background."""
 
-    def __init__(self, missions, handler, send, spawn):
+    def __init__(self, missions, handler, send, spawn, pool=None):
         """
         missions : SqliteMissions
         handler  : HandleMessage (callable)
         send     : async (chat_id: str, text: str) -> None — never raises
         spawn    : (coro) -> None — fire-and-forget wrapper
+        pool     : AgentPool | None — caps concurrent heavy mission turns
         """
         self._missions = missions
         self._handler = handler
         self._send = send
         self._spawn = spawn
+        self._pool = pool
 
     async def __call__(self) -> None:
         pending = await self._missions.claim_pending()
@@ -42,7 +45,8 @@ class MissionRunner:
                 chat_id=mission.chat_id,
                 text=mission.instruction,
             )
-            out = await self._handler(incoming, allow_actions=True)
+            async with (self._pool or contextlib.nullcontext()):
+                out = await self._handler(incoming, allow_actions=True)
             result = out.text or "(sin resultado)"
             await self._missions.finish(mission.id, DONE, result)
             await self._send(

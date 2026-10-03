@@ -1,4 +1,5 @@
 import asyncio
+from typing import Self
 
 
 class AgentPool:
@@ -26,7 +27,7 @@ class AgentPool:
     def size(self) -> int:
         return self._size
 
-    async def __aenter__(self) -> "AgentPool":
+    async def __aenter__(self) -> Self:
         await self._sem.acquire()
         return self
 
