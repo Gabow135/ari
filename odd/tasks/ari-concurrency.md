@@ -56,7 +56,7 @@ a later feature.)
   `max_background_agents` (3) to `Settings`, with a defaults test.
 - [x] **T2 — KeyedLocks:** per-key async lock registry; same key serializes,
   different keys run concurrently.
-- [ ] **T3 — AgentPool:** bounded-semaphore async context manager; caps
+- [x] **T3 — AgentPool:** bounded-semaphore async context manager; caps
   concurrency to N, queues the rest; configurable size.
 - [ ] **T4 — Wire L1:** set `concurrent_updates(max_concurrent_chats)` on the
   builder and acquire the per-user lock around the dispatch turn.
@@ -82,6 +82,10 @@ a later feature.)
 - **T2 (KeyedLocks)** ✅ TDD RED (`ModuleNotFoundError: ari.application.concurrency`)
   → GREEN (`3 passed`). Module: `src/ari/application/concurrency/keyed_locks.py`;
   test: `tests/application/test_keyed_locks.py`.
+- **T3 (AgentPool)** ✅ TDD RED (`ModuleNotFoundError: ...agent_pool`) → GREEN
+  (`4 passed`: caps peak concurrency to size, serializes at size 1, rejects
+  size 0). Module: `src/ari/application/concurrency/agent_pool.py`; test:
+  `tests/application/test_agent_pool.py`.
 
 ## Next step
-Implement T3 (AgentPool) with TDD.
+Implement T4 (wire L1: concurrent_updates + per-user lock) with TDD.
