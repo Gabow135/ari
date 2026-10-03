@@ -29,7 +29,7 @@
       "access": "owner",
       "description": "Archivos del computador (carpeta de trabajo del dueño)"
     },
-    "email": {
+    "email_corp": {
       "command": "npx",
       "args": ["-y", "mcp-mail-server@2.1.0"],
       "env": {
@@ -43,7 +43,39 @@
         "EMAIL_PASS": "${ARI_EMAIL_PASS}"
       },
       "access": "owner",
-      "description": "Correo por IMAP/SMTP: leer y enviar (cuenta del creador)"
+      "description": "Correo corporativo/cPanel por IMAP/SMTP: leer y enviar"
+    },
+    "email_gmail": {
+      "command": "npx",
+      "args": ["-y", "mcp-mail-server@2.1.0"],
+      "env": {
+        "IMAP_HOST": "imap.gmail.com",
+        "IMAP_PORT": "993",
+        "IMAP_SECURE": "true",
+        "SMTP_HOST": "smtp.gmail.com",
+        "SMTP_PORT": "465",
+        "SMTP_SECURE": "true",
+        "EMAIL_USER": "${ARI_GMAIL_USER}",
+        "EMAIL_PASS": "${ARI_GMAIL_PASS}"
+      },
+      "access": "owner",
+      "description": "Gmail: leer y enviar (requiere App Password)"
+    },
+    "email_hotmail": {
+      "command": "npx",
+      "args": ["-y", "mcp-mail-server@2.1.0"],
+      "env": {
+        "IMAP_HOST": "outlook.office365.com",
+        "IMAP_PORT": "993",
+        "IMAP_SECURE": "true",
+        "SMTP_HOST": "smtp.office365.com",
+        "SMTP_PORT": "587",
+        "SMTP_SECURE": "false",
+        "EMAIL_USER": "${ARI_HOTMAIL_USER}",
+        "EMAIL_PASS": "${ARI_HOTMAIL_PASS}"
+      },
+      "access": "owner",
+      "description": "Hotmail/Outlook: leer y enviar (requiere App Password)"
     },
     "huggingface": {
       "env": {

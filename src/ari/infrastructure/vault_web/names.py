@@ -11,6 +11,14 @@ KNOWN_LABELS: dict[str, tuple[str, str]] = {
         "HuggingFace Token",
         "Token de acceso a HuggingFace para pyannote.audio",
     ),
+    "ARI_GMAIL_USER": ("Gmail: dirección", "Tu dirección de Gmail (correo completo)"),
+    "ARI_GMAIL_PASS": ("Gmail: App Password", "App Password de Gmail (no la contraseña normal)"),
+    "ARI_HOTMAIL_USER": ("Hotmail/Outlook: dirección", "Tu dirección de Hotmail/Outlook (correo completo)"),
+    "ARI_HOTMAIL_PASS": ("Hotmail/Outlook: App Password", "App Password de Outlook (no la contraseña normal)"),
+    "ARI_EMAIL_USER": ("Corporativo: dirección", "Dirección del correo corporativo/cPanel"),
+    "ARI_EMAIL_PASS": ("Corporativo: contraseña", "Contraseña del correo corporativo/cPanel"),
+    "ARI_IMAP_HOST": ("Corporativo: host IMAP", "Servidor IMAP del correo corporativo (ej: mail.tudominio.com)"),
+    "ARI_SMTP_HOST": ("Corporativo: host SMTP", "Servidor SMTP del correo corporativo (ej: mail.tudominio.com)"),
 }
 
 
