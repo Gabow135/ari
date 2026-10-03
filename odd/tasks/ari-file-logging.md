@@ -63,6 +63,8 @@ asyncio_mode=auto, testpaths=tests).
 - Gotcha hit: a `git stash`/`pop` used to compare ruff baseline conflicted on
   uv.lock (because `uv run` re-touches it) and left changes stashed; recovered by
   cleaning uv.lock then popping. Don't `git stash` around `uv run`.
-- NOT committed — awaiting user decision (repo's live bot auto-merges to main).
+- SHIPPED: committed as `0265d21` and pushed to `origin/main`
+  (af4b650..0265d21), fast-forward, alongside the pre-existing `/enroll` commit
+  60d8054. User restarts Ari automatically from main.
 - Follow-up (separate feature): the actual MCP/IMAP stall that causes the
   timeouts; this feature only makes it observable.
