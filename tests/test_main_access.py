@@ -50,6 +50,9 @@ class _FakeBuilder:
     def post_shutdown(self, _f):
         return self
 
+    def concurrent_updates(self, _n):
+        return self
+
     def build(self):
         return self._app
 

@@ -45,6 +45,9 @@ class _FakeBuilder:
         self._app.post_shutdown_fn = f
         return self
 
+    def concurrent_updates(self, _n):
+        return self
+
     def build(self):
         return self._app
 

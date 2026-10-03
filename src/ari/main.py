@@ -26,6 +26,7 @@ from ari.application.command.request_runner import CommandRequestRunner
 from ari.application.credentials.request_runner import CredentialRequestRunner
 from ari.application.credentials.needs import missing_inbound_secrets
 from ari.application.missions.run_pending_missions import MissionRunner
+from ari.application.concurrency.keyed_locks import KeyedLocks
 from ari.application.handle_message import HandleMessage
 from ari.application.memory.consolidator import MemoryConsolidator
 from ari.application.memory_maintainer import MemoryMaintainer
@@ -196,6 +197,10 @@ def main() -> None:
     lifecycle = Lifecycle(Authorizer(settings.owner_id_set).is_owner)
     # Set by a confirmed /stop or /restart; acted on once run_polling returns.
     exit_request: dict[str, str] = {}
+    # One lock per user: chats run concurrently across users (concurrent_updates),
+    # but a single user's messages are serialized so two of their turns never
+    # race the same working memory.
+    user_locks = KeyedLocks()
 
     async def _post_init(app):
         c = await build(settings, env, tz)
@@ -397,6 +402,7 @@ def main() -> None:
     app = (
         Application.builder()
         .token(settings.telegram_bot_token)
+        .concurrent_updates(settings.max_concurrent_chats)
         .post_init(_post_init)
         .post_shutdown(_post_shutdown)
         .build()
@@ -482,26 +488,28 @@ def main() -> None:
             scheduler=_schedule,
         )
 
-        # "typing…" + a live progress message, deleted before the final reply.
-        async with ProgressMessage(app.bot, msg.chat_id):
-            reply = await route_message(text, user_id, local_deps)
-        if reply is not None:
-            for part in TelegramAdapter.split_text(reply):
-                await msg.reply_text(part)
-            if from_voice:
-                origin = InboundContext(came_from_voice=True, chat_id=str(msg.chat_id), user_id=user_id)
-                is_owner = app.bot_data["gate"].is_owner(user_id)
-                deliveries = await app.bot_data["skills"].run_outbound(
-                    OutgoingMessage(chat_id=str(msg.chat_id), text=reply), origin, is_owner)
-                for d in deliveries:
-                    if d.kind == "voice" and d.data:
-                        try:
-                            await app.bot.send_voice(chat_id=int(msg.chat_id), voice=bytes(d.data))
-                        except Exception:
+        # Serialize this user's turns; different users still run concurrently.
+        async with user_locks(user_id):
+            # "typing…" + a live progress message, deleted before the final reply.
+            async with ProgressMessage(app.bot, msg.chat_id):
+                reply = await route_message(text, user_id, local_deps)
+            if reply is not None:
+                for part in TelegramAdapter.split_text(reply):
+                    await msg.reply_text(part)
+                if from_voice:
+                    origin = InboundContext(came_from_voice=True, chat_id=str(msg.chat_id), user_id=user_id)
+                    is_owner = app.bot_data["gate"].is_owner(user_id)
+                    deliveries = await app.bot_data["skills"].run_outbound(
+                        OutgoingMessage(chat_id=str(msg.chat_id), text=reply), origin, is_owner)
+                    for d in deliveries:
+                        if d.kind == "voice" and d.data:
                             try:
-                                await app.bot.send_audio(chat_id=int(msg.chat_id), audio=bytes(d.data))
-                            except Exception as exc:
-                                logging.warning("voice reply failed for %s: %s", msg.chat_id, exc)
+                                await app.bot.send_voice(chat_id=int(msg.chat_id), voice=bytes(d.data))
+                            except Exception:
+                                try:
+                                    await app.bot.send_audio(chat_id=int(msg.chat_id), audio=bytes(d.data))
+                                except Exception as exc:
+                                    logging.warning("voice reply failed for %s: %s", msg.chat_id, exc)
 
     async def _on_command(update, _context) -> None:
         """Handle /code and /fase2 slash commands."""

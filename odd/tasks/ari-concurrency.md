@@ -58,7 +58,7 @@ a later feature.)
   different keys run concurrently.
 - [x] **T3 — AgentPool:** bounded-semaphore async context manager; caps
   concurrency to N, queues the rest; configurable size.
-- [ ] **T4 — Wire L1:** set `concurrent_updates(max_concurrent_chats)` on the
+- [x] **T4 — Wire L1:** set `concurrent_updates(max_concurrent_chats)` on the
   builder and acquire the per-user lock around the dispatch turn.
 - [ ] **T5 — Wire L2:** construct one `AgentPool` in `_post_init`, inject it into
   the three runners, and acquire it around each background turn.
@@ -86,6 +86,14 @@ a later feature.)
   (`4 passed`: caps peak concurrency to size, serializes at size 1, rejects
   size 0). Module: `src/ari/application/concurrency/agent_pool.py`; test:
   `tests/application/test_agent_pool.py`.
+- **T4 (wire L1)** ✅ Route: inline (mechanical wiring; TDD evidence critical so
+  kept in parent to observe RED/GREEN directly). TDD RED (3 tests in
+  `tests/test_main_concurrency.py`: `concurrent` is `None`; second message not
+  serialized) → GREEN. Added `.concurrent_updates(settings.max_concurrent_chats)`
+  to the builder and wrapped the dispatch turn in `user_locks(user_id)` (a
+  `KeyedLocks`). Mirrored `concurrent_updates` into the three existing fake
+  builders. Regression: `20 passed` across `test_main_concurrency`,
+  `test_main_access`, `test_main_shutdown`, `test_bot_errors`.
 
 ## Next step
-Implement T4 (wire L1: concurrent_updates + per-user lock) with TDD.
+Implement T5 (wire L2: runners acquire the AgentPool) with TDD.
