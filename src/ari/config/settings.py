@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     mcp_config: str = "./mcp/servers.json"
     skills_dir: str = "./skills"
     chat_timeout_seconds: int = 180
+    # Concurrency (L1/L2): chat is capped by PTB's concurrent_updates; background
+    # agents (missions, scheduled tasks, coding) share a separate bounded pool so
+    # a flood never starves the interactive chat nor thrashes the host.
+    max_concurrent_chats: int = 8
+    max_background_agents: int = 3
     # Logging: persistent rotating file so runtime behavior (chat-turn timeouts
     # above all) can be followed after the fact. Empty log_file = console only.
     log_file: str = "./logs/ari.log"
