@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     timezone: str = "America/Guayaquil"
     quiet_hours: str = "22-7"  # local hours "start-end"; empty = none
     heartbeat_minutes: int = 60  # 0 disables the heartbeat
-    max_items_per_user: int = 20
+    max_items_per_user: int = 50
     # Tools / MCP (3A)
     mcp_config: str = "./mcp/servers.json"
     skills_dir: str = "./skills"
