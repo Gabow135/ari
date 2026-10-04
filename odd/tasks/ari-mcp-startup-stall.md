@@ -37,8 +37,11 @@ to trivial messages.
   Route: direct inline. NOTE: claude CLI abort-vs-skip behavior on a timed-out
   server is not officially documented (claude-code-guide could not confirm);
   fast-fail is strictly better than the prior unbounded hang either way.
-- [ ] T3 — (pending, needs live/.env) Isolate which email server hangs; disable
-  or repair it.
+- [x] T3 — CLOSED BY DECISION (2026-10-03): leave email_corp as is. MCP_TIMEOUT
+  already stops it from blocking the turn; the only cost is ~20s of wasted startup
+  budget per turn on a dead server. Not disabled (keeps the corp-email capability);
+  repairing the host (open :993 / DNS) is server-side, out of this repo's scope.
+  .env stayed permission-denied so the host was never read or probed.
 - [ ] T4 — (optional, bigger) Avoid cold-starting all MCP servers each turn.
 
 ## Related (already shipped this session, separate change — uncommitted)
