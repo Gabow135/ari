@@ -52,7 +52,8 @@ class Actor:
 class AriTools:
     def __init__(self, actor: Actor, *, schedule, memory, turn_log, tz, max_items: int,
                  clock, gate=None, access=None, coding=None, commands=None, missions=None,
-                 credentials=None, skills=None, grants=None):
+                 credentials=None, skills=None, grants=None,
+                 email_accounts=None, email_enroll=None):
         self._a, self._schedule, self._memory, self._log = actor, schedule, memory, turn_log
         self._tz, self._max, self._clock = tz, max_items, clock
         self._gate, self._access = gate, access
@@ -62,6 +63,8 @@ class AriTools:
         self._credentials = credentials  # SqliteCredentialRequests | None
         self._skills = skills  # SkillManager (load=False) | None
         self._grants = grants  # GrantPolicy | None
+        self._email_accounts = email_accounts  # EmailAccountsPort | None
+        self._email_enroll = email_enroll      # SqliteEmailEnrollRequests | None
 
     def _allowed(self, tool: str) -> bool:
         if tool in allowed_ari_tools(self._a.is_owner, self._a.context):
@@ -460,3 +463,36 @@ class AriTools:
             return "No pude prepararlo: la cola de comandos no está disponible."
         await self._commands.add(self._a.user_id, self._a.chat_id, text)
         return await self._receipt(f"⌨️ Preparando comando: {truncate(text)}")
+
+    # ---- per-user email ---------------------------------------------------
+
+    async def conectar_correo(self) -> str:
+        if not self._allowed("conectar_correo"):
+            return DENIED
+        if self._email_enroll is None:
+            return "No puedo conectar correo ahora mismo."
+        await self._email_enroll.add(self._a.user_id, self._a.chat_id)
+        return await self._receipt(
+            "📧 Te mando un archivo para conectar tu correo. Abrilo, cargá tus datos "
+            "y pegame acá el código que te genera.")
+
+    async def mis_correos(self) -> str:
+        if not self._allowed("mis_correos"):
+            return DENIED
+        if self._email_accounts is None:
+            return "No puedo ver tus correos ahora mismo."
+        sums = await self._email_accounts.summaries_for(self._a.user_id)
+        if not sums:
+            return "No tienes casillas conectadas. Dime «conecta mi correo» para agregar una."
+        return "\n".join(f"📧 {s.label}: {s.address}" for s in sums)
+
+    async def olvidar_correo(self, label: str) -> str:
+        if not self._allowed("olvidar_correo"):
+            return DENIED
+        if self._email_accounts is None:
+            return "No puedo borrar correos ahora mismo."
+        name = (label or "").strip().lower()
+        removed = await self._email_accounts.remove(self._a.user_id, name)
+        if not removed:
+            return f"No encontré una casilla «{name}»."
+        return await self._receipt(f"🗑️ Desconecté la casilla «{name}».")

@@ -26,15 +26,22 @@ async def _get_tools() -> AriTools:
     """Built on the first tool call, so a bare handshake needs no actor env."""
     global _tools
     if _tools is None:
+        from ari.infrastructure.email.sqlite_email_accounts import SqliteEmailAccounts
+        from ari.infrastructure.persistence.sqlite_email_enroll_requests import (
+            SqliteEmailEnrollRequests,
+        )
         env = os.environ
         conn = await open_existing(env["ARI_DB_PATH"])
         schedule, access = SqliteScheduleStore(conn), SqliteAccessStore(conn)
         grants = GrantPolicy(SqliteGrantStore(conn))
         owners = {o.strip() for o in env.get("ARI_OWNER_IDS", "").split(",") if o.strip()}
+        email_accounts = SqliteEmailAccounts(conn, None)
+        email_enroll = SqliteEmailEnrollRequests(conn)
 
         async def _on_revoke(user_id: str) -> None:
             await schedule.cancel_user(user_id)
             await grants.forget_user(user_id)
+            await email_accounts.delete_for_user(user_id)
 
         _tools = AriTools(
             actor_from_env(env), schedule=schedule,
@@ -48,7 +55,9 @@ async def _get_tools() -> AriTools:
             missions=SqliteMissions(conn),
             credentials=SqliteCredentialRequests(conn),
             skills=SkillManager(env.get("ARI_SKILLS_DIR", "./skills"), load=False),
-            grants=grants)
+            grants=grants,
+            email_accounts=email_accounts,
+            email_enroll=email_enroll)
     return _tools
 
 

@@ -8,11 +8,13 @@ ARI_TOOLS = ("agendar", "listar_agenda", "cancelar", "recordar_dato", "olvidar_d
              "asignar_mision", "ver_misiones", "cancelar_mision",
              "pedir_credenciales",
              "ver_skills", "activar_skill", "desactivar_skill",
-             "compartir", "ver_permisos", "revocar_permiso")
+             "compartir", "ver_permisos", "revocar_permiso",
+             "conectar_correo", "mis_correos", "olvidar_correo")
 
 _READ = {"listar_agenda", "ver_datos"}
 _USER_CHAT = _READ | {"agendar", "cancelar", "recordar_dato", "olvidar_dato",
-                      "compartir", "ver_permisos", "revocar_permiso"}
+                      "compartir", "ver_permisos", "revocar_permiso",
+                      "conectar_correo", "mis_correos", "olvidar_correo"}
 
 
 def allowed_ari_tools(is_owner: bool, context: str) -> tuple[str, ...]:
