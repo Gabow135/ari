@@ -31,22 +31,27 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
 
     @tool("agendar")
     async def agendar(tipo: str, texto: str, at: str | None = None,
-                      cron: str | None = None) -> str:
-        """Agenda un recordatorio (se envía el texto a la hora indicada) o una tarea
-        (a esa hora ejecutas la instrucción). tipo: "recordatorio" o "tarea". Usa
-        at (fecha y hora local ISO, p. ej. 2026-09-26T09:00) para una vez, o cron
-        (5 campos, hora local, mínimo cada 1 hora) para repetir."""
-        return await (await get_tools()).agendar(tipo, texto, at, cron)
+                      cron: str | None = None, de_usuario: str | None = None) -> str:
+        """Agenda un recordatorio o una tarea. tipo: "recordatorio" o "tarea".
+        Usa at (ISO local, p. ej. 2026-09-26T09:00) para una vez, o cron (5 campos,
+        hora local, mínimo cada 1 hora) para repetir. de_usuario: opcional, @usuario
+        o id de otra persona que te compartió sus recordatorios (lo agendas en su
+        agenda y le llega a ella)."""
+        return await (await get_tools()).agendar(tipo, texto, at, cron, de_usuario)
 
     @tool("listar_agenda")
-    async def listar_agenda() -> str:
-        """Lista los recordatorios y tareas activos del usuario con su #número."""
-        return await (await get_tools()).listar_agenda()
+    async def listar_agenda(de_usuario: str | None = None) -> str:
+        """Lista los recordatorios y tareas activos con su #número. de_usuario:
+        opcional, @usuario o id de alguien que te compartió sus recordatorios para
+        ver los de esa persona."""
+        return await (await get_tools()).listar_agenda(de_usuario)
 
     @tool("cancelar")
-    async def cancelar(id: int) -> str:
-        """Cancela un recordatorio o tarea del usuario por su #número."""
-        return await (await get_tools()).cancelar(id)
+    async def cancelar(id: int, de_usuario: str | None = None) -> str:
+        """Cancela un recordatorio o tarea por su #número. de_usuario: opcional,
+        @usuario o id de alguien que te compartió sus recordatorios con permiso de
+        gestión, para cancelar uno de esa persona."""
+        return await (await get_tools()).cancelar(id, de_usuario)
 
     @tool("recordar_dato")
     async def recordar_dato(clave: str, valor: str) -> str:
