@@ -79,6 +79,25 @@ CREATE TABLE IF NOT EXISTS facts_history (
   old_value TEXT, new_value TEXT NOT NULL, resolution TEXT NOT NULL,
   created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_facts_history_user ON facts_history(user_id, key);
+
+CREATE TABLE IF NOT EXISTS user_email_accounts (
+  user_id     TEXT    NOT NULL,
+  label       TEXT    NOT NULL,
+  imap_host   TEXT    NOT NULL,
+  imap_port   INTEGER NOT NULL DEFAULT 993,
+  imap_secure INTEGER NOT NULL DEFAULT 1,
+  smtp_host   TEXT    NOT NULL,
+  smtp_port   INTEGER NOT NULL DEFAULT 465,
+  smtp_secure INTEGER NOT NULL DEFAULT 1,
+  email_user  TEXT    NOT NULL,
+  pass_enc    TEXT    NOT NULL,
+  created_at  TEXT    NOT NULL,
+  PRIMARY KEY (user_id, label));
+
+CREATE TABLE IF NOT EXISTS email_enroll_requests (
+  id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, chat_id TEXT NOT NULL,
+  status TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_email_enroll_status ON email_enroll_requests(status, id);
 """
 
 

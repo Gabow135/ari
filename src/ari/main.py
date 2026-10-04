@@ -123,6 +123,9 @@ class Components:
     turn_config_writer: TurnConfigWriter
     vault_web: VaultWebMaintainer
     skills: "SkillManager"
+    sealed_box: object
+    email_accounts: object
+    email_enroll: object
 
 
 def cli_env(settings: Settings) -> dict | None:
@@ -136,11 +139,21 @@ def cli_env(settings: Settings) -> dict | None:
 
 
 async def build(settings: Settings, env: dict | None, tz) -> Components:
+    from ari.infrastructure.crypto.fernet_cipher import FernetCipher
+    from ari.infrastructure.email.sealed_box import AriSealedBox
+    from ari.infrastructure.email.sqlite_email_accounts import SqliteEmailAccounts
+    from ari.infrastructure.persistence.sqlite_email_enroll_requests import (
+        SqliteEmailEnrollRequests,
+    )
     embeddings = FastEmbedEmbeddings(settings.embedding_model)
     dim = len((await embeddings.embed(["probe"]))[0])
     conn = await connect(settings.db_path, embedding_dim=dim)
     memory = SqliteMemoryAdapter(conn, embedding_dim=dim)
     vault = FernetVault(settings.vault_path, settings.vault_key)
+    email_cipher = FernetCipher(settings.vault_key) if settings.vault_key else None
+    email_accounts = SqliteEmailAccounts(conn, email_cipher)
+    sealed_box = AriSealedBox(vault)
+    email_enroll = SqliteEmailEnrollRequests(conn)
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     sensitive = (project_root, settings.vault_path,
                  os.path.join(project_root, ".env"), os.path.abspath(settings.claude_config_dir))
@@ -157,7 +170,7 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     })
     turn_config_writer = TurnConfigWriter(os.path.join(settings.claude_config_dir, "mcp"))
     tools = ToolPolicy(registry, Authorizer(settings.owner_id_set).is_owner, ari=ari_spec,
-                       writer=turn_config_writer)
+                       writer=turn_config_writer, email_accounts=email_accounts)
     llm = MonitoredLLM(ClaudeCodeCliAdapter(model=settings.model,
                                             claude_bin=settings.claude_bin, cli_env=env,
                                             timeout=settings.chat_timeout_seconds))
@@ -193,7 +206,8 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         bind=settings.vault_web_bind, ttl_minutes=settings.vault_web_ttl_minutes,
         extra_names=skills.required_secret_names)
     return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul, tools,
-                      turn_log, turn_config_writer, vault_web, skills)
+                      turn_log, turn_config_writer, vault_web, skills,
+                      sealed_box, email_accounts, email_enroll)
 
 
 def main() -> None:
@@ -227,6 +241,7 @@ def main() -> None:
         async def _on_revoke(user_id: str) -> None:
             await c.schedule_store.cancel_user(user_id)
             await grants.forget_user(user_id)
+            await c.email_accounts.delete_for_user(user_id)
 
         app.bot_data["gate"] = AccessGate(access_store, settings.owner_id_set,
                                           on_revoke=_on_revoke)
@@ -293,6 +308,12 @@ def main() -> None:
         app.bot_data["confirm"] = confirm
         app.bot_data["confirm_command"] = confirm_command
 
+        # Email blob interception: ConnectEmailAccount + interceptor stored on bot_data.
+        from ari.application.email.connect_email_account import ConnectEmailAccount
+        from ari.application.email.intercept import EmailBlobInterceptor
+        connect_email = ConnectEmailAccount(c.sealed_box, c.email_accounts)
+        app.bot_data["email_interceptor"] = EmailBlobInterceptor(connect_email)
+
         # Proactivity: reminders/tasks, system notices, heartbeat.
         async def send(chat_id: str, text: str) -> None:
             await _send_quietly(app.bot, chat_id, text)
@@ -317,6 +338,14 @@ def main() -> None:
         credential_requests = SqliteCredentialRequests(c.conn)
         credential_runner = CredentialRequestRunner(credential_requests, c.vault_web, send, _utcnow)
 
+        async def send_document(chat_id: str, filename: str, content: bytes) -> None:
+            await app.bot.send_document(chat_id=int(chat_id), document=content, filename=filename)
+
+        from ari.application.email.enroll_runner import EmailEnrollRunner
+        from ari.infrastructure.email.account_form import render_enroll_html
+        enroll_runner = EmailEnrollRunner(c.email_enroll, c.sealed_box, render_enroll_html,
+                                          send_document, send)
+
         async def after_turn() -> None:
             # Each step is guarded on its own so a failure in one (e.g. the
             # outbox flush) never skips the other (e.g. a queued code proposal).
@@ -336,6 +365,10 @@ def main() -> None:
                 await credential_runner()
             except Exception:
                 log.exception("credential request runner failed")
+            try:
+                await enroll_runner()
+            except Exception:
+                log.exception("enroll request runner failed")
 
         c.handler._after_turn = after_turn  # flush + proposed code, right after each turn
 
@@ -394,7 +427,7 @@ def main() -> None:
         )
 
         scheduler = Scheduler([due, notices.tick, heartbeat, flusher, coding_runner,
-                               command_runner, mission_runner, credential_runner,
+                               command_runner, mission_runner, credential_runner, enroll_runner,
                                vault_web_sweep, consolidator])
         scheduler.start()
         app.bot_data["scheduler"] = scheduler
@@ -451,6 +484,19 @@ def main() -> None:
         if not await _admit(msg):
             return
         user_id = str(msg.from_user.id)
+
+        # Blob interception: a pasted ari-mail blob is stored silently and confirmed
+        # with a short reply; it never reaches the message handler or memory.
+        from ari.application.email.connect_email_account import is_email_blob
+        if is_email_blob(text):
+            interceptor = app.bot_data["email_interceptor"]
+            reply = await interceptor.handle(user_id, text)
+            try:
+                await msg.delete()
+            except Exception:  # noqa: BLE001, S110
+                pass
+            await _reply_parts(msg, reply)
+            return
 
         # A reply to a pending /stop or /restart is consumed here.
         confirmation = lifecycle.confirm(text, user_id)

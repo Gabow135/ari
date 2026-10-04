@@ -171,4 +171,21 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         usuario: @username o id. El usuario pierde acceso de inmediato."""
         return await (await get_tools()).revocar_permiso(capacidad, usuario)
 
+    @tool("conectar_correo")
+    async def conectar_correo() -> str:
+        """Conecta una casilla de correo del usuario (IMAP/SMTP). Te mando un archivo
+        para cargar los datos de forma segura; el usuario pega de vuelta un código."""
+        return await (await get_tools()).conectar_correo()
+
+    @tool("mis_correos")
+    async def mis_correos() -> str:
+        """Lista las casillas de correo que el usuario tiene conectadas (sin mostrar
+        la contraseña)."""
+        return await (await get_tools()).mis_correos()
+
+    @tool("olvidar_correo")
+    async def olvidar_correo(label: str) -> str:
+        """Desconecta una casilla de correo del usuario por su etiqueta."""
+        return await (await get_tools()).olvidar_correo(label)
+
     return server

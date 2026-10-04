@@ -1,0 +1,6 @@
+from typing import Protocol
+
+
+class SecretCipher(Protocol):
+    def encrypt(self, plaintext: str) -> str: ...
+    def decrypt(self, token: str) -> str: ...
