@@ -2,9 +2,9 @@ import asyncio
 import dataclasses
 import logging
 import os
-import sys
 import os.path
-from datetime import datetime, timezone
+import sys
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 # Module-level set to keep references to background tasks so they cannot be
@@ -13,8 +13,6 @@ _background_tasks: set = set()
 
 from ari.application.access.gate import ADMIN_COMMANDS, AccessGate, deliver
 from ari.application.admin.lifecycle import LIFECYCLE_COMMANDS, RESTART, Lifecycle
-from ari.application.skills.skill_admin import SkillAdmin
-from ari.application.skills.skill_manager import SkillManager
 from ari.application.coding.authorizer import Authorizer
 from ari.application.coding.confirm_coding import ConfirmCoding
 from ari.application.coding.flow import CodingDeps, route_message
@@ -23,14 +21,15 @@ from ari.application.coding.request_coding import RequestCoding
 from ari.application.coding.request_runner import CodingRequestRunner
 from ari.application.command.confirm_command import ConfirmCommand
 from ari.application.command.request_runner import CommandRequestRunner
-from ari.application.credentials.request_runner import CredentialRequestRunner
-from ari.application.credentials.needs import missing_inbound_secrets
-from ari.application.missions.run_pending_missions import MissionRunner
 from ari.application.concurrency.agent_pool import AgentPool
 from ari.application.concurrency.keyed_locks import KeyedLocks
+from ari.application.credentials.needs import missing_inbound_secrets
+from ari.application.credentials.request_runner import CredentialRequestRunner
+from ari.application.grants.grant_policy import GrantPolicy
 from ari.application.handle_message import HandleMessage
 from ari.application.memory.consolidator import MemoryConsolidator
 from ari.application.memory_maintainer import MemoryMaintainer
+from ari.application.missions.run_pending_missions import MissionRunner
 from ari.application.outbox import OutboxFlusher
 from ari.application.schedule.heartbeat import Heartbeat
 from ari.application.schedule.llm_health import MonitoredLLM
@@ -38,27 +37,33 @@ from ari.application.schedule.run_due_items import RunDueItems
 from ari.application.schedule.schedule_actions import ScheduleActions
 from ari.application.schedule.scheduler import Scheduler
 from ari.application.schedule.system_notices import SystemNotices
+from ari.application.skills.skill_admin import SkillAdmin
+from ari.application.skills.skill_manager import SkillManager
 from ari.application.text_format import truncate
 from ari.application.tools.tool_policy import AriServerSpec, ToolPolicy
 from ari.config.settings import Settings
 from ari.domain.agent.agent_service import AgentService
 from ari.domain.memory.recall_ranker import RankWeights, RecallRanker
 from ari.domain.ports.gateway_port import IncomingMessage, OutgoingMessage
-from ari.domain.skills.models import InboundContext, RawInbound
 from ari.domain.schedule.quiet_hours import parse_window
+from ari.domain.skills.models import InboundContext, RawInbound
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
-from ari.infrastructure.grants.sqlite_grant_store import SqliteGrantStore
-from ari.application.grants.grant_policy import GrantPolicy
+from ari.infrastructure.bot_errors import handle_bot_error
 from ari.infrastructure.claude_env import claude_cli_env
-from ari.infrastructure.logging_setup import setup_logging
 from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
 from ari.infrastructure.coder.verifier import CoderVerifier
 from ari.infrastructure.coder.workspace import Workspace
 from ari.infrastructure.command.shell_runner import ShellRunner
 from ari.infrastructure.gateway.bot_commands import register_commands
 from ari.infrastructure.gateway.progress_message import ProgressMessage
-from ari.infrastructure.gateway.telegram_adapter import TelegramAdapter, voice_to_text, media_to_text
+from ari.infrastructure.gateway.telegram_adapter import (
+    TelegramAdapter,
+    media_to_text,
+    voice_to_text,
+)
+from ari.infrastructure.grants.sqlite_grant_store import SqliteGrantStore
 from ari.infrastructure.llm.claude_code_adapter import ClaudeCodeCliAdapter
+from ari.infrastructure.logging_setup import setup_logging
 from ari.infrastructure.memory.embeddings import FastEmbedEmbeddings
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import connect
@@ -67,14 +72,13 @@ from ari.infrastructure.persistence.sqlite_command_requests import SqliteCommand
 from ari.infrastructure.persistence.sqlite_credential_requests import SqliteCredentialRequests
 from ari.infrastructure.persistence.sqlite_missions import SqliteMissions
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
+from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 from ari.infrastructure.soul.soul_loader import SoulLoader
 from ari.infrastructure.tools.mcp_registry import McpRegistry
 from ari.infrastructure.tools.turn_config import TurnConfigWriter
 from ari.infrastructure.vault.fernet_vault import FernetVault
 from ari.infrastructure.vault_web.maintainer import VaultWebMaintainer
-from ari.infrastructure.bot_errors import handle_bot_error
-from ari.infrastructure.process import RESTART_NOTIFY_ENV, relaunch
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("ari.main")
@@ -85,7 +89,7 @@ _DRAIN_TIMEOUT = 30
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 async def _send_checked(bot, chat_id: str, text: str) -> bool:
@@ -94,7 +98,7 @@ async def _send_checked(bot, chat_id: str, text: str) -> bool:
         try:
             await bot.send_message(chat_id=int(chat_id), text=part)
         except Exception as exc:  # noqa: BLE001
-            logging.warning("could not send to %s: %s", chat_id, exc)
+            log.warning("could not send to %s: %s", chat_id, exc)
             return False
     return True
 
@@ -124,9 +128,9 @@ class Components:
 def cli_env(settings: Settings) -> dict | None:
     env = claude_cli_env(settings.claude_oauth_token, settings.claude_config_dir)
     if env is None:
-        logging.warning("ARI_CLAUDE_OAUTH_TOKEN is not set: Ari runs the claude CLI with "
-                        "the host login, so that account's email is visible to Ari. "
-                        "Run `claude setup-token` and put the token in .env.")
+        log.warning("ARI_CLAUDE_OAUTH_TOKEN is not set: Ari runs the claude CLI with "
+                    "the host login, so that account's email is visible to Ari. "
+                    "Run `claude setup-token` and put the token in .env.")
     return env
 
 
@@ -215,7 +219,7 @@ def main() -> None:
         app.bot_data["skills"] = c.skills
         app.bot_data["skill_admin"] = SkillAdmin(c.skills, c.vault_web)
         for line in c.tools.status_text().splitlines():
-            logging.info("conexión: %s", line)
+            log.info("conexión: %s", line)
         access_store = SqliteAccessStore(c.conn)
         grants = GrantPolicy(SqliteGrantStore(c.conn))
 
@@ -226,8 +230,8 @@ def main() -> None:
         app.bot_data["gate"] = AccessGate(access_store, settings.owner_id_set,
                                           on_revoke=_on_revoke)
         if not settings.owner_id_set:
-            logging.warning("ARI_OWNER_IDS is empty: nobody can approve access, "
-                            "so every Telegram user will be blocked")
+            log.warning("ARI_OWNER_IDS is empty: nobody can approve access, "
+                        "so every Telegram user will be blocked")
         await register_commands(app.bot, settings.owner_id_set)
         notify_chat = os.environ.pop(RESTART_NOTIFY_ENV, None)
         if notify_chat:
@@ -235,7 +239,7 @@ def main() -> None:
                 await app.bot.send_message(chat_id=int(notify_chat),
                                            text="Listo, Ari está de vuelta.")
             except Exception as exc:  # noqa: BLE001 — best-effort notification
-                logging.warning("could not send restart notice: %s", exc)
+                log.warning("could not send restart notice: %s", exc)
 
         # Bounded pool shared by all background agents (missions, scheduled
         # tasks, coding) so a flood never spawns unbounded `claude` subprocesses
@@ -352,7 +356,7 @@ def main() -> None:
         # but they do carry actor identity: swept away before anything else runs.
         swept = c.turn_config_writer.sweep()
         if swept:
-            logging.info("swept %d orphaned turn config file(s)", swept)
+            log.info("swept %d orphaned turn config file(s)", swept)
 
         heartbeat = Heartbeat(
             llm=c.llm, memory=c.memory, store=c.schedule_store, agent=c.agent,
@@ -402,8 +406,8 @@ def main() -> None:
         if due is not None:
             try:
                 await asyncio.wait_for(due.drain(), timeout=_DRAIN_TIMEOUT)
-            except asyncio.TimeoutError:
-                logging.warning(
+            except TimeoutError:
+                log.warning(
                     "timed out after %ss draining in-flight scheduled tasks; "
                     "closing the DB anyway", _DRAIN_TIMEOUT)
         vw = app.bot_data.get("vault_web")
@@ -521,11 +525,11 @@ def main() -> None:
                         if d.kind == "voice" and d.data:
                             try:
                                 await app.bot.send_voice(chat_id=int(msg.chat_id), voice=bytes(d.data))
-                            except Exception:
+                            except Exception:  # noqa: BLE001
                                 try:
                                     await app.bot.send_audio(chat_id=int(msg.chat_id), audio=bytes(d.data))
-                                except Exception as exc:
-                                    logging.warning("voice reply failed for %s: %s", msg.chat_id, exc)
+                                except Exception as exc:  # noqa: BLE001
+                                    log.warning("voice reply failed for %s: %s", msg.chat_id, exc)
 
     async def _on_command(update, _context) -> None:
         """Handle /code and /fase2 slash commands."""
@@ -567,7 +571,7 @@ def main() -> None:
                         await msg.reply_text(
                             f"Necesito {', '.join(missing)} para leer eso. Cárgala en la misma "
                             f"red (vence pronto):\n{link}")
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         await msg.reply_text("No pude procesar ese archivo. ¿Lo resumes por texto?")
                 else:
                     await msg.reply_text(
@@ -599,7 +603,7 @@ def main() -> None:
                     await msg.reply_text(
                         f"Necesito {', '.join(missing)} para procesar audio. Cárgala en la misma "
                         f"red (vence pronto):\n{link}")
-                except Exception:
+                except Exception:  # noqa: BLE001
                     await msg.reply_text("No pude procesar ese audio. ¿Lo escribís?")
             else:
                 await msg.reply_text(
@@ -750,7 +754,7 @@ def main() -> None:
 
     # run_polling returned: shutdown (incl. closing the DB) is complete.
     if exit_request.get("action") == RESTART:
-        logging.info("restarting Ari")
+        log.info("restarting Ari")
         relaunch(exit_request["chat"])
 
 

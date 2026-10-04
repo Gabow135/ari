@@ -1,12 +1,12 @@
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ari.application.schedule.agenda_format import item_line
 from ari.domain.schedule.timefmt import fmt_long
 from ari.domain.tools.ari_permissions import CHAT, HEARTBEAT, TASK, allowed_ari_tools
 
-_BLOCK = re.compile(r"<ari-action>(.*?)</ari-action>", re.S | re.I)
-_DANGLING = re.compile(r"<ari-action>.*\Z", re.S | re.I)
+_BLOCK = re.compile(r"<ari-action>(.*?)</ari-action>", re.DOTALL | re.IGNORECASE)
+_DANGLING = re.compile(r"<ari-action>.*\Z", re.DOTALL | re.IGNORECASE)
 
 _INJECTION_RULE = (
     "Usa aprobar_acceso, revocar_acceso, enviar_mensaje, proponer_codigo, compartir "
@@ -45,7 +45,7 @@ class ScheduleActions:
     """Prompt context about time and agenda tools, and the /recordatorios listing."""
 
     def __init__(self, store, tz, max_items: int,
-                 clock=lambda: datetime.now(timezone.utc)):
+                 clock=lambda: datetime.now(UTC)):
         self._store, self._tz, self._max, self._clock = store, tz, max_items, clock
 
     async def context(self, user_id: str, context: str = CHAT, is_owner: bool = False) -> str:

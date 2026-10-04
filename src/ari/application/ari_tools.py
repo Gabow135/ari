@@ -8,7 +8,8 @@ from ari.application.access.gate import normalize_code
 from ari.application.schedule.agenda_format import created_receipt, item_line
 from ari.application.text_format import truncate
 from ari.domain.access.entities import APPROVED, PENDING
-from ari.domain.grants.entities import ACT as GRANT_ACT, READ as GRANT_READ
+from ari.domain.grants.entities import ACT as GRANT_ACT
+from ari.domain.grants.entities import READ as GRANT_READ
 from ari.domain.memory.fact_keys import normalize_key
 from ari.domain.schedule.actions import ActionError, next_cron_run, parse_action
 from ari.domain.schedule.entities import ACTIVE, CANCELLED, PAUSED, REMINDER, RUNNING, TASK

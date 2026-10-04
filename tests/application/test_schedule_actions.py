@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -12,8 +12,8 @@ from ari.infrastructure.persistence.db import connect
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 
 TZ = ZoneInfo("America/Guayaquil")
-NOW = datetime(2026, 9, 25, 20, 0, tzinfo=timezone.utc)  # vie 15:00 local
-AT = datetime(2026, 9, 26, 14, 0, tzinfo=timezone.utc)  # sáb 09:00 local
+NOW = datetime(2026, 9, 25, 20, 0, tzinfo=UTC)  # vie 15:00 local
+AT = datetime(2026, 9, 26, 14, 0, tzinfo=UTC)  # sáb 09:00 local
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def test_item_line_formats():
     one = ScheduleItem(12, "u", "c", REMINDER, "llamar a Juan", AT, None, "active")
     assert item_line(one, TZ) == "#12 · sáb 26/09 09:00 · llamar a Juan"
     rec = ScheduleItem(13, "u", "c", TASK, "resumen",
-                       datetime(2026, 9, 28, 13, 0, tzinfo=timezone.utc), "0 8 * * 1", PAUSED)
+                       datetime(2026, 9, 28, 13, 0, tzinfo=UTC), "0 8 * * 1", PAUSED)
     assert item_line(rec, TZ) == ("#13 · cada lunes 08:00 (próxima lun 28/09 08:00) · resumen"
                                   " · ⏸️ pausada")
 
@@ -40,7 +40,7 @@ def test_item_line_formats():
 def test_created_receipts():
     assert created_receipt(12, REMINDER, "llamar a Juan", AT, None, TZ) == \
         "✅ Recordatorio #12: llamar a Juan — sáb 26/09 09:00"
-    nxt = datetime(2026, 9, 28, 13, 0, tzinfo=timezone.utc)
+    nxt = datetime(2026, 9, 28, 13, 0, tzinfo=UTC)
     assert created_receipt(13, TASK, "resumen", nxt, "0 8 * * 1", TZ) == \
         "🔁 Tarea #13 (cada lunes 08:00): resumen — próxima: lun 28/09 08:00"
 

@@ -1,5 +1,5 @@
 # tests/application/test_ari_tools_on_behalf.py
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -14,7 +14,7 @@ from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStor
 
 
 def _clock():
-    return datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+    return datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
 
 
 async def _build(tmp_path):
@@ -73,7 +73,7 @@ async def test_agendar_on_behalf_needs_act_and_writes_under_target(tmp_path):
 
 @pytest.mark.asyncio
 async def test_unresolvable_target_errors_without_touching_data(tmp_path):
-    conn, schedule, grants, tools_for = await _build(tmp_path)
+    conn, _schedule, _grants, tools_for = await _build(tmp_path)
     try:
         b = tools_for("B")
         out = await b.listar_agenda(de_usuario="@nope")
@@ -102,7 +102,7 @@ async def test_cancelar_on_behalf_verifies_ownership(tmp_path):
 
 @pytest.mark.asyncio
 async def test_revoked_grant_denies_next_call(tmp_path):
-    conn, schedule, grants, tools_for = await _build(tmp_path)
+    conn, _schedule, grants, tools_for = await _build(tmp_path)
     try:
         await grants.share("A", "B", "schedule", "read")
         b = tools_for("B")

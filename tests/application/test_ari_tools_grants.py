@@ -7,8 +7,8 @@ from ari.domain.grants.entities import ACT
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
 from ari.infrastructure.grants.sqlite_grant_store import SqliteGrantStore
 from ari.infrastructure.persistence.db import connect
-from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
+from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
 
 
 class _TZ:

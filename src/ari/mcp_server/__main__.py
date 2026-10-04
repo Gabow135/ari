@@ -1,11 +1,14 @@
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from ari.application.access.gate import AccessGate
 from ari.application.ari_tools import AriTools
+from ari.application.grants.grant_policy import GrantPolicy
+from ari.application.skills.skill_manager import SkillManager
 from ari.domain.tools.ari_permissions import allowed_ari_tools
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
+from ari.infrastructure.grants.sqlite_grant_store import SqliteGrantStore
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import open_existing
 from ari.infrastructure.persistence.sqlite_coding_requests import SqliteCodingRequests
@@ -14,9 +17,6 @@ from ari.infrastructure.persistence.sqlite_credential_requests import SqliteCred
 from ari.infrastructure.persistence.sqlite_missions import SqliteMissions
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
-from ari.infrastructure.grants.sqlite_grant_store import SqliteGrantStore
-from ari.application.grants.grant_policy import GrantPolicy
-from ari.application.skills.skill_manager import SkillManager
 from ari.mcp_server.server import actor_from_env, build_server
 
 _tools: AriTools | None = None
@@ -41,7 +41,7 @@ async def _get_tools() -> AriTools:
             memory=SqliteMemoryAdapter(conn, embedding_dim=1),
             turn_log=SqliteTurnLog(conn), tz=ZoneInfo(env.get("ARI_TIMEZONE", "UTC")),
             max_items=int(env.get("ARI_MAX_ITEMS", "20")),
-            clock=lambda: datetime.now(timezone.utc),
+            clock=lambda: datetime.now(UTC),
             gate=AccessGate(access, owners, on_revoke=_on_revoke), access=access,
             coding=SqliteCodingRequests(conn),
             commands=SqliteCommandRequests(conn),
