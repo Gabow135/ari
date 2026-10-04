@@ -93,6 +93,11 @@ CREATE TABLE IF NOT EXISTS user_email_accounts (
   pass_enc    TEXT    NOT NULL,
   created_at  TEXT    NOT NULL,
   PRIMARY KEY (user_id, label));
+
+CREATE TABLE IF NOT EXISTS email_enroll_requests (
+  id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, chat_id TEXT NOT NULL,
+  status TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_email_enroll_status ON email_enroll_requests(status, id);
 """
 
 
