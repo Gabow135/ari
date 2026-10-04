@@ -23,9 +23,11 @@ async def no_turn():
 class ToolPolicy:
     """Which tools one Claude call may use, decided by who Ari is talking to."""
 
-    def __init__(self, registry, is_owner, ari: "AriServerSpec | None" = None, writer=None):
+    def __init__(self, registry, is_owner, ari: "AriServerSpec | None" = None, writer=None,
+                 email_accounts=None):
         self._registry, self._is_owner = registry, is_owner
         self._ari, self._writer = ari, writer
+        self._email_accounts = email_accounts
 
     def for_user(self, user_id: str) -> Toolset:
         names, path = self._registry.servers_for(self._is_owner(user_id))
@@ -34,7 +36,18 @@ class ToolPolicy:
         builtin = (*WEB_TOOLS, TOOL_SEARCH)
         return Toolset(builtin, (*builtin, *(f"mcp__{n}" for n in names)), path)
 
-    def view(self, user_id: str) -> ToolsView:
+    async def _inject_email(self, servers: dict, user_id: str) -> None:
+        if self._email_accounts is None:
+            return
+        from ari.infrastructure.email.server_spec import email_server_spec, server_name
+        try:
+            accounts = await self._email_accounts.list_for_user(user_id)
+        except Exception:  # no cipher / unreadable: degrade to no mailboxes
+            return
+        for acct in accounts:
+            servers[server_name(acct.label)] = email_server_spec(acct)
+
+    async def view(self, user_id: str) -> ToolsView:
         is_owner = self._is_owner(user_id)
         servers = self._registry.descriptions(is_owner)
         degraded = self._registry.degraded_for(is_owner)
@@ -48,6 +61,12 @@ class ToolPolicy:
                     f"- {server_icon(n)} {n}: {d} — ⚠️ {detail}"
                     " (tu creador puede activarla con /vault)"
                 )
+        if self._email_accounts is not None:
+            try:
+                for s in await self._email_accounts.summaries_for(user_id):
+                    lines.append(f"- 📧 mail_{s.label}: tu casilla {s.label} ({s.address})")
+            except Exception:
+                pass
         return ToolsView(
             "\n".join(lines),
             has_web=True,
@@ -81,12 +100,13 @@ class ToolPolicy:
         config whose ``ari`` entry carries who is acting — the model can't change
         it — and always deletes it when the call ends."""
         turn_id = uuid.uuid4().hex
-        view = self.view(user_id)
+        view = await self.view(user_id)
         if self._ari is None or self._writer is None:
             yield Turn(self.for_user(user_id), view, turn_id)
             return
         owner = self._is_owner(user_id)
         servers = self._registry.resolved(owner)
+        await self._inject_email(servers, user_id)
         servers[ARI_SERVER] = {
             "command": self._ari.command, "args": list(self._ari.args),
             "env": {**self._ari.base_env, "ARI_ACTOR_ID": user_id,

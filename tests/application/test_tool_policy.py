@@ -42,11 +42,11 @@ def test_owner_with_servers_gets_toolsearch_and_server_allowlist():
     assert t.mcp_config_path == "/cfg/owner.json"
 
 
-def test_view_lists_web_and_role_connections():
-    v = _policy(owner=[("google", "Gmail del creador")]).view("42")
+async def test_view_lists_web_and_role_connections():
+    v = await _policy(owner=[("google", "Gmail del creador")]).view("42")
     assert v.has_web and v.has_mcp
     assert "🌐 web" in v.text and "🔌 google: Gmail del creador" in v.text
-    u = _policy(owner=[("google", "Gmail del creador")]).view("7")
+    u = await _policy(owner=[("google", "Gmail del creador")]).view("7")
     assert u.has_web and not u.has_mcp and "google" not in u.text
 
 
