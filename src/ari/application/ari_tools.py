@@ -74,10 +74,29 @@ class AriTools:
 
     # ---- agenda -----------------------------------------------------------
 
+    async def _target(self, de_usuario: str, min_level: str) -> tuple[str | None, str | None]:
+        """Resolve an @usuario/id and check a 'schedule' grant from them to the
+        actor. Returns (target_user_id, None) when allowed, else (None, error)."""
+        if self._grants is None or self._access is None:
+            return None, "El sistema de permisos no está disponible."
+        rec, error = await self._resolve(de_usuario, {APPROVED})
+        if error:
+            return None, error
+        if not await self._grants.allows(self._a.user_id, rec.user_id, SCHEDULE, min_level):
+            verb = "ver" if min_level == GRANT_READ else "gestionar"
+            return None, f"No tenés permiso para {verb} los recordatorios de {_who(rec)}."
+        return rec.user_id, None
+
     async def agendar(self, tipo: str, texto: str, at: str | None = None,
-                      cron: str | None = None) -> str:
+                      cron: str | None = None, de_usuario: str | None = None) -> str:
         if not self._allowed("agendar"):
             return DENIED
+        uid, chat = self._a.user_id, self._a.chat_id
+        if de_usuario:
+            uid, error = await self._target(de_usuario, GRANT_ACT)
+            if error:
+                return error
+            chat = uid  # DM assistant: the owner's reminder is delivered to them
         kind = _KINDS.get((tipo or "").strip().lower())
         if kind is None:
             return "No pude agendarlo: el tipo debe ser «recordatorio» o «tarea»."
@@ -87,34 +106,44 @@ class AriTools:
                                   now, self._tz)
         except ActionError as exc:
             return f"No pude agendarlo: {exc}."
-        if await self._schedule.count_active(self._a.user_id) >= self._max:
-            return (f"No pude agendarlo: ya tienes {self._max} recordatorios o tareas "
-                    "activos. Cancela alguno primero.")
+        if await self._schedule.count_active(uid) >= self._max:
+            return (f"No pude agendarlo: ya hay {self._max} recordatorios o tareas "
+                    "activos. Cancelá alguno primero.")
         next_run = action.at or next_cron_run(action.cron, now, self._tz)
-        item_id = await self._schedule.add(self._a.user_id, self._a.chat_id, action.kind,
+        item_id = await self._schedule.add(uid, chat, action.kind,
                                            action.text, next_run, action.cron)
         return await self._receipt(created_receipt(item_id, action.kind, action.text,
                                                    next_run, action.cron, self._tz))
 
-    async def listar_agenda(self) -> str:
+    async def listar_agenda(self, de_usuario: str | None = None) -> str:
         if not self._allowed("listar_agenda"):
             return DENIED
-        items = await self._schedule.list_for_user(self._a.user_id)
+        uid = self._a.user_id
+        if de_usuario:
+            uid, error = await self._target(de_usuario, GRANT_READ)
+            if error:
+                return error
+        items = await self._schedule.list_for_user(uid)
         if not items:
             return "No tienes recordatorios ni tareas activos."
         return "\n".join(item_line(i, self._tz) for i in items)
 
-    async def cancelar(self, id: int) -> str:
+    async def cancelar(self, id: int, de_usuario: str | None = None) -> str:
         if not self._allowed("cancelar"):
             return DENIED
+        uid = self._a.user_id
+        if de_usuario:
+            uid, error = await self._target(de_usuario, GRANT_ACT)
+            if error:
+                return error
         try:
             id_int = int(id)
         except (ValueError, TypeError):
-            return f"No encontré el #{id} entre tus recordatorios."
+            return f"No encontré el #{id} entre los recordatorios."
         item = await self._schedule.get(id_int)
-        if (item is None or item.user_id != self._a.user_id
+        if (item is None or item.user_id != uid
                 or item.status not in (ACTIVE, PAUSED, RUNNING)):
-            return f"No encontré el #{id_int} entre tus recordatorios."
+            return f"No encontré el #{id_int} entre los recordatorios."
         await self._schedule.set_status(item.id, CANCELLED)
         return await self._receipt(f"🗑️ Cancelado #{item.id}: {item.text}")
 

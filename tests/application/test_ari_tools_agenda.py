@@ -57,7 +57,7 @@ async def test_agendar_invalid_explains_and_writes_nothing(deps):
 async def test_cap(deps):
     t = _tools(deps, max_items=1)
     await t.agendar("recordatorio", "a", at="2026-09-26T09:00")
-    assert "ya tienes 1" in await t.agendar("recordatorio", "b", at="2026-09-26T10:00")
+    assert "ya hay 1" in await t.agendar("recordatorio", "b", at="2026-09-26T10:00")
 
 
 async def test_listar_and_cancel_only_own(deps):
