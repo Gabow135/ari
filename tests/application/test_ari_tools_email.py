@@ -47,6 +47,13 @@ async def test_mis_correos_masks_address(tools):
     assert "pw" not in out
 
 
+async def test_mis_correos_empty(tools):
+    t, _, _ = tools
+    out = await t.mis_correos()
+    assert "No tienes casillas conectadas" in out
+    assert "conecta mi correo" in out.lower()
+
+
 async def test_olvidar_correo_removes(tools):
     t, accounts, _ = tools
     await accounts.add(EmailAccount("7", "trabajo", "h", 993, True, "h", 465, True,

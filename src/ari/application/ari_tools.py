@@ -473,8 +473,8 @@ class AriTools:
             return "No puedo conectar correo ahora mismo."
         await self._email_enroll.add(self._a.user_id, self._a.chat_id)
         return await self._receipt(
-            "📧 Te mando un archivo para conectar tu correo. Abrilo, cargá tus datos "
-            "y pegame acá el código que te genera.")
+            "📧 Te mando un archivo para conectar tu correo. Ábrelo, carga tus datos "
+            "y pégame aquí el código que te genera.")
 
     async def mis_correos(self) -> str:
         if not self._allowed("mis_correos"):
