@@ -1,4 +1,3 @@
-import json
 import pytest
 
 from ari.application.tools.tool_policy import AriServerSpec, ToolPolicy

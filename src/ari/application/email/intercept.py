@@ -1,3 +1,8 @@
+import logging
+
+log = logging.getLogger("ari.email")
+
+
 class EmailBlobInterceptor:
     """Turns a pasted ari-mail blob into a stored account + a chat reply, never
     raising into the dispatch loop."""
@@ -10,4 +15,7 @@ class EmailBlobInterceptor:
             label = await self._connect(user_id, text)
         except ValueError as exc:
             return f"No pude conectar la casilla: {exc}."
+        except Exception:
+            log.exception("email blob handling failed for user %s", user_id)
+            return "No pude conectar tu correo en este momento."
         return f"\U0001f4e7 Casilla «{label}» conectada ✅"

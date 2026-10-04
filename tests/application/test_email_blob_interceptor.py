@@ -19,3 +19,14 @@ async def test_failure_returns_error_not_raises():
     interceptor = EmailBlobInterceptor(FakeConnect(ValueError("blob ilegible")))
     reply = await interceptor.handle("7", "ari-mail:v1:bad")
     assert "blob ilegible" in reply
+
+
+async def test_runtime_error_returns_generic_message_not_raises():
+    """A RuntimeError (e.g. missing ARI_VAULT_KEY) must never escape handle()."""
+    interceptor = EmailBlobInterceptor(
+        FakeConnect(RuntimeError("ARI_VAULT_KEY no está configurada"))
+    )
+    reply = await interceptor.handle("7", "ari-mail:v1:xxx")
+    assert reply  # non-empty
+    assert "ARI_VAULT_KEY" not in reply  # no internal detail leaked
+    assert "correo" in reply.lower() or "conectar" in reply.lower()

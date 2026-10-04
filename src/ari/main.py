@@ -344,7 +344,7 @@ def main() -> None:
         from ari.application.email.enroll_runner import EmailEnrollRunner
         from ari.infrastructure.email.account_form import render_enroll_html
         enroll_runner = EmailEnrollRunner(c.email_enroll, c.sealed_box, render_enroll_html,
-                                          send_document)
+                                          send_document, send)
 
         async def after_turn() -> None:
             # Each step is guarded on its own so a failure in one (e.g. the
