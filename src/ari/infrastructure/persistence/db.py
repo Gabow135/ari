@@ -23,6 +23,12 @@ CREATE TABLE IF NOT EXISTS access (
   user_id TEXT PRIMARY KEY, username TEXT, code TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 
+CREATE TABLE IF NOT EXISTS grants (
+  grantor_id TEXT NOT NULL, grantee_id TEXT NOT NULL, capability TEXT NOT NULL,
+  level TEXT NOT NULL, created_at TEXT NOT NULL,
+  PRIMARY KEY (grantor_id, grantee_id, capability));
+CREATE INDEX IF NOT EXISTS idx_grants_grantee ON grants(grantee_id);
+
 CREATE TABLE IF NOT EXISTS schedules (
   id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, chat_id TEXT NOT NULL,
   kind TEXT NOT NULL, text TEXT NOT NULL, next_run_at TEXT NOT NULL, cron TEXT,
