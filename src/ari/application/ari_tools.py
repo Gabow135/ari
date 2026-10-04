@@ -85,7 +85,7 @@ class AriTools:
             return None, error
         if not await self._grants.allows(self._a.user_id, rec.user_id, SCHEDULE, min_level):
             verb = "ver" if min_level == GRANT_READ else "gestionar"
-            return None, f"No tenés permiso para {verb} los recordatorios de {_who(rec)}."
+            return None, f"No tienes permiso para {verb} los recordatorios de {_who(rec)}."
         return rec.user_id, None
 
     async def agendar(self, tipo: str, texto: str, at: str | None = None,
@@ -109,7 +109,7 @@ class AriTools:
             return f"No pude agendarlo: {exc}."
         if await self._schedule.count_active(uid) >= self._max:
             return (f"No pude agendarlo: ya hay {self._max} recordatorios o tareas "
-                    "activos. Cancelá alguno primero.")
+                    "activos. Cancela alguno primero.")
         next_run = action.at or next_cron_run(action.cron, now, self._tz)
         item_id = await self._schedule.add(uid, chat, action.kind,
                                            action.text, next_run, action.cron)
@@ -208,7 +208,7 @@ class AriTools:
         if error:
             return error
         if rec.user_id == self._a.user_id:
-            return "No podés compartir tus recordatorios con vos mismo."
+            return "No puedes compartir tus recordatorios contigo mismo."
         level = self._level(nivel)
         await self._grants.share(self._a.user_id, rec.user_id, cap, level)
         nivel_txt = "ver y gestionar" if level == GRANT_ACT else "ver"
@@ -216,7 +216,7 @@ class AriTools:
         await self._log.outbox_add(
             rec.user_id,
             f"🔑 {signature} te dio permiso para {nivel_txt} sus recordatorios. "
-            "Pedímelos cuando quieras (por ejemplo: «mostrame los recordatorios de "
+            "Pídemelos cuando quieras (por ejemplo: «muéstrame los recordatorios de "
             f"{signature}»).")
         return await self._receipt(
             f"🔑 Listo, {_who(rec)} ahora puede {nivel_txt} tus recordatorios.")
@@ -260,7 +260,7 @@ class AriTools:
             signature = (self._a.name or "").strip() or "tu contacto"
             await self._log.outbox_add(
                 rec.user_id,
-                f"🔒 Ya no tenés acceso a los recordatorios de {signature}.")
+                f"🔒 Ya no tienes acceso a los recordatorios de {signature}.")
             return await self._receipt(f"🔒 Revoqué el permiso a {_who(rec)}.")
         return f"{_who(rec)} no tenía permiso sobre tus recordatorios."
 
