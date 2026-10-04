@@ -9,6 +9,24 @@ _WITH_USER = ("## Con quién hablas\n"
               "los comandos de administración; no los menciones.")
 
 
+def _who(is_owner: bool, display_name: str) -> str:
+    """The "Con quién hablas" section. When the sender's name is known it is
+    named so Ari recognizes the person; otherwise the generic role line stays
+    (background runs — scheduled tasks, heartbeat, missions — carry no name)."""
+    name = (display_name or "").strip()
+    if is_owner:
+        if name:
+            return ("## Con quién hablas\n"
+                    f"Estás hablando con tu creador, {name} (dueño de Ari). "
+                    "Tiene acceso a todo.")
+        return _WITH_OWNER
+    if name:
+        return ("## Con quién hablas\n"
+                f"Estás hablando con {name}, un usuario que tu creador aprobó. "
+                "No tiene acceso a los comandos de administración; no los menciones.")
+    return _WITH_USER
+
+
 class AgentService:
     # Used when no soul file is available.
     SYSTEM_PREAMBLE = (
@@ -21,9 +39,9 @@ class AgentService:
     def build_prompt(self, facts: list[Fact], summary: Summary | None,
                      recalls: list[Recall], soul: str | None = None,
                      is_owner: bool = False, extra: str | None = None,
-                     tools: ToolsView | None = None) -> str:
+                     tools: ToolsView | None = None, display_name: str = "") -> str:
         parts = [soul.strip() if soul and soul.strip() else self.SYSTEM_PREAMBLE,
-                 _WITH_OWNER if is_owner else _WITH_USER,
+                 _who(is_owner, display_name),
                  render_capabilities(is_owner,
                                      has_web=bool(tools and tools.has_web),
                                      has_mcp=bool(tools and tools.has_mcp),

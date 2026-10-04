@@ -45,6 +45,25 @@ def test_user_prompt_hides_admin_commands():
     assert "creador" in prompt.lower()  # knows who created it, but isn't talking to them
 
 
+def test_owner_prompt_names_the_person_when_known():
+    prompt = AgentService().build_prompt([], None, [], is_owner=True, display_name="Gabriel")
+    assert "Gabriel" in prompt
+    assert "creador" in prompt.lower()
+
+
+def test_user_prompt_names_the_person_when_known():
+    prompt = AgentService().build_prompt([], None, [], is_owner=False, display_name="María")
+    assert "María" in prompt
+    assert "/restart" not in prompt  # naming the person must not leak admin commands
+
+
+def test_prompt_without_display_name_keeps_generic_role_line():
+    # Regression: background runs (scheduled tasks, heartbeat, missions) carry no
+    # name, so the role line must stay exactly as it was.
+    prompt = AgentService().build_prompt([], None, [], is_owner=True)
+    assert "Estás hablando con tu creador (dueño de Ari)" in prompt
+
+
 def test_extra_section_is_appended():
     prompt = AgentService().build_prompt([], None, [], extra="## Fecha y hora actual\nhoy")
     assert "## Fecha y hora actual\nhoy" in prompt
