@@ -1,9 +1,7 @@
 from cryptography.fernet import Fernet
 
-from ari.domain.crypto.secret_cipher import SecretCipher
 
-
-class FernetCipher(SecretCipher):
+class FernetCipher:
     """Encrypts/decrypts a single string with the same ARI_VAULT_KEY the vault uses."""
 
     def __init__(self, key: str):
