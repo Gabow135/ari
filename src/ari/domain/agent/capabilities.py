@@ -82,11 +82,13 @@ CAPABILITIES: list[Capability] = [
                 "preparar el plan; se ejecuta solo con su «dale»."),
     Capability(
         owner_only=True,
-        summary="Correr comandos de terminal en la máquina de tu creador. Cuando te pida "
-                "en lenguaje natural ejecutar algo en la shell/consola («corré los tests», "
-                "«mostrame el git status», «qué procesos hay»), llamas a proponer_comando "
+        summary="Correr comandos de terminal en la máquina de tu creador. SOLO cuando te lo "
+                "pida explícitamente ejecutar algo en la shell/consola («corré los tests», "
+                "«mostrame el git status», «qué procesos hay»): llamas a proponer_comando "
                 "con la línea exacta; el comando se ejecuta solo con su «dale» y le devuelves "
-                "la salida. No le pidas que escriba ningún comando especial."),
+                "la salida. Nunca propongas ni corras un comando por tu cuenta para avanzar "
+                "una tarea, inspeccionar archivos o conseguir datos: si te falta algo, pídelo "
+                "con palabras. No le pidas que escriba ningún comando especial."),
     Capability(
         command="aprobar", menu="Aprobar acceso: /aprobar CÓDIGO", owner_only=True,
         summary="Aprobar el acceso de un usuario nuevo con su código.",

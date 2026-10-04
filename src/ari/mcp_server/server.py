@@ -97,11 +97,13 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
     @tool("proponer_comando")
     async def proponer_comando(comando: str) -> str:
         """(Solo el creador) Prepara un comando de terminal para ejecutar en la máquina
-        de tu creador. Llámala directamente SIEMPRE que tu creador te pida en lenguaje
-        natural correr algo en la terminal/consola/shell (p. ej. «corré los tests»,
-        «mostrame el git status», «qué procesos hay», «instalá tal paquete»); no le pidas
-        que escriba ningún comando especial. Solo prepara el comando: nada se ejecuta hasta
-        que tu creador responda «dale». comando: la línea de shell exacta a correr."""
+        de tu creador. Llámala SOLO cuando tu creador te pida explícitamente correr algo
+        en la terminal/consola/shell (p. ej. «corré los tests», «mostrame el git status»,
+        «qué procesos hay», «instalá tal paquete»); no le pidas que escriba ningún comando
+        especial. NUNCA la uses por tu cuenta para avanzar una tarea, inspeccionar archivos
+        o conseguir datos: si te falta algo, dilo con palabras. Solo prepara el comando:
+        nada se ejecuta hasta que tu creador responda «dale». comando: la línea de shell
+        exacta a correr."""
         return await (await get_tools()).proponer_comando(comando)
 
     @tool("asignar_mision")
