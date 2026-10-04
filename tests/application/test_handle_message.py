@@ -266,7 +266,7 @@ async def test_timeout_gives_a_reply_instead_of_silence():
     out = await HandleMessage(memory=FakeMemory(), llm=SlowLLM(), embeddings=FakeEmbeddings(),
                               agent=AgentService())(IncomingMessage("u1", "c1", "hola"))
     assert out.text == TIMEOUT_REPLY
-    assert "Me tardé demasiado" in TIMEOUT_REPLY
+    assert "se quedó colgada" in TIMEOUT_REPLY
 
 
 async def test_timeout_reraises_for_scheduled_tasks_so_they_count_as_failures():
