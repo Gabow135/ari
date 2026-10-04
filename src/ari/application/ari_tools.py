@@ -8,6 +8,7 @@ from ari.application.access.gate import normalize_code
 from ari.application.schedule.agenda_format import created_receipt, item_line
 from ari.application.text_format import truncate
 from ari.domain.access.entities import APPROVED, PENDING
+from ari.domain.grants.entities import ACT as GRANT_ACT, READ as GRANT_READ
 from ari.domain.memory.fact_keys import normalize_key
 from ari.domain.schedule.actions import ActionError, next_cron_run, parse_action
 from ari.domain.schedule.entities import ACTIVE, CANCELLED, PAUSED, REMINDER, RUNNING, TASK
@@ -17,6 +18,9 @@ log = logging.getLogger("ari.tools")
 
 DENIED = "No permitido en este contexto."
 _KINDS = {"recordatorio": REMINDER, "tarea": TASK}
+SCHEDULE = "schedule"
+_CAPS = {"recordatorios": SCHEDULE, "recordatorio": SCHEDULE,
+         "tareas": SCHEDULE, "tarea": SCHEDULE, "agenda": SCHEDULE}
 
 
 def _who(rec) -> str:
@@ -47,7 +51,7 @@ class Actor:
 class AriTools:
     def __init__(self, actor: Actor, *, schedule, memory, turn_log, tz, max_items: int,
                  clock, gate=None, access=None, coding=None, commands=None, missions=None,
-                 credentials=None, skills=None):
+                 credentials=None, skills=None, grants=None):
         self._a, self._schedule, self._memory, self._log = actor, schedule, memory, turn_log
         self._tz, self._max, self._clock = tz, max_items, clock
         self._gate, self._access = gate, access
@@ -56,6 +60,7 @@ class AriTools:
         self._missions = missions  # SqliteMissions | None
         self._credentials = credentials  # SqliteCredentialRequests | None
         self._skills = skills  # SkillManager (load=False) | None
+        self._grants = grants  # GrantPolicy | None
 
     def _allowed(self, tool: str) -> bool:
         if tool in allowed_ari_tools(self._a.is_owner, self._a.context):
@@ -153,6 +158,81 @@ class AriTools:
         if not facts:
             return "No tengo datos guardados de ti."
         return "\n".join(f"- {f.key}: {f.value}" for f in facts)
+
+    # ---- cross-user grants ------------------------------------------------
+
+    @staticmethod
+    def _level(nivel: str) -> str:
+        return GRANT_ACT if (nivel or "").strip().lower() in (
+            "act", "accion", "acción", "gestionar", "escribir") else GRANT_READ
+
+    async def compartir(self, capacidad: str, usuario: str, nivel: str = "act") -> str:
+        if not self._allowed("compartir"):
+            return DENIED
+        if self._grants is None or self._access is None:
+            return "No puedo compartir: el sistema de permisos no está disponible."
+        cap = _CAPS.get((capacidad or "").strip().lower())
+        if cap is None:
+            return "No pude compartir eso: por ahora solo puedo compartir «recordatorios»."
+        rec, error = await self._resolve(usuario, {APPROVED})
+        if error:
+            return error
+        if rec.user_id == self._a.user_id:
+            return "No podés compartir tus recordatorios con vos mismo."
+        level = self._level(nivel)
+        await self._grants.share(self._a.user_id, rec.user_id, cap, level)
+        nivel_txt = "ver y gestionar" if level == GRANT_ACT else "ver"
+        signature = (self._a.name or "").strip() or "un contacto"
+        await self._log.outbox_add(
+            rec.user_id,
+            f"🔑 {signature} te dio permiso para {nivel_txt} sus recordatorios. "
+            "Pedímelos cuando quieras (por ejemplo: «mostrame los recordatorios de "
+            f"{signature}»).")
+        return await self._receipt(
+            f"🔑 Listo, {_who(rec)} ahora puede {nivel_txt} tus recordatorios.")
+
+    async def ver_permisos(self) -> str:
+        if not self._allowed("ver_permisos"):
+            return DENIED
+        if self._grants is None or self._access is None:
+            return "El sistema de permisos no está disponible."
+        given = await self._grants.given_by(self._a.user_id)
+        received = await self._grants.received_by(self._a.user_id)
+        if not given and not received:
+            return "No compartiste permisos ni te compartieron ninguno."
+        by_id = {r.user_id: r for r in await self._access.list_all()}
+
+        def who(uid: str) -> str:
+            rec = by_id.get(uid)
+            return _who(rec) if rec else f"id {uid}"
+
+        lines: list[str] = []
+        if given:
+            lines.append("Diste:")
+            lines += [f"  • {who(g.grantee_id)} — recordatorios ({g.level})" for g in given]
+        if received:
+            lines.append("Te dieron:")
+            lines += [f"  • {who(g.grantor_id)} — recordatorios ({g.level})" for g in received]
+        return "\n".join(lines)
+
+    async def revocar_permiso(self, capacidad: str, usuario: str) -> str:
+        if not self._allowed("revocar_permiso"):
+            return DENIED
+        if self._grants is None or self._access is None:
+            return "El sistema de permisos no está disponible."
+        cap = _CAPS.get((capacidad or "").strip().lower())
+        if cap is None:
+            return "No reconozco esa capacidad. Por ahora solo «recordatorios»."
+        rec, error = await self._resolve(usuario, {APPROVED})
+        if error:
+            return error
+        if await self._grants.revoke(self._a.user_id, rec.user_id, cap):
+            signature = (self._a.name or "").strip() or "tu contacto"
+            await self._log.outbox_add(
+                rec.user_id,
+                f"🔒 Ya no tenés acceso a los recordatorios de {signature}.")
+            return await self._receipt(f"🔒 Revoqué el permiso a {_who(rec)}.")
+        return f"{_who(rec)} no tenía permiso sobre tus recordatorios."
 
     # ---- owner administration --------------------------------------------
 

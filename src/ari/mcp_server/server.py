@@ -146,4 +146,22 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         """(Solo el creador) Desactiva un skill instalado por su nombre exacto."""
         return await (await get_tools()).desactivar_skill(nombre)
 
+    @tool("compartir")
+    async def compartir(capacidad: str, usuario: str, nivel: str = "act") -> str:
+        """Comparte una capacidad (p. ej. «recordatorios») con otro usuario aprobado.
+        usuario: @username o id. nivel: «act» (ver y gestionar, por defecto) o «read»
+        (solo ver). El destinatario recibe una notificación automática."""
+        return await (await get_tools()).compartir(capacidad, usuario, nivel)
+
+    @tool("ver_permisos")
+    async def ver_permisos() -> str:
+        """Lista los permisos que le diste a otros usuarios y los que otros te dieron."""
+        return await (await get_tools()).ver_permisos()
+
+    @tool("revocar_permiso")
+    async def revocar_permiso(capacidad: str, usuario: str) -> str:
+        """Revoca el permiso que le diste a un usuario sobre una capacidad.
+        usuario: @username o id. El usuario pierde acceso de inmediato."""
+        return await (await get_tools()).revocar_permiso(capacidad, usuario)
+
     return server
