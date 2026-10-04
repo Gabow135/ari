@@ -1,3 +1,5 @@
+import pytest
+
 from ari.infrastructure.email.account_form import PROVIDERS, render_enroll_html
 
 
@@ -13,3 +15,8 @@ def test_html_embeds_key_form_and_sodium():
     assert "ari-mail:v1:" in html             # output prefix
     assert 'name="password"' in html
     assert "base64_variants.ORIGINAL" in html  # pinned variant (see Review Focus)
+
+
+def test_rejects_non_base64_public_key():
+    with pytest.raises(ValueError):
+        render_enroll_html('"; alert(1); //')

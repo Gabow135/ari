@@ -1,4 +1,6 @@
 import importlib.resources as res
+import json
+import re
 
 PROVIDERS = {
     "gmail":   {"imap_host": "imap.gmail.com", "imap_port": 993, "imap_secure": True,
@@ -17,8 +19,9 @@ def _sodium_js() -> str:
 
 
 def render_enroll_html(public_key_b64: str) -> str:
-    import json
-    presets = json.dumps(PROVIDERS)
+    if not re.fullmatch(r"[A-Za-z0-9+/=]+", public_key_b64 or ""):
+        raise ValueError("public_key_b64 must be standard base64")
+    presets = json.dumps(PROVIDERS).replace("</", "<\\/")
     sodium = _sodium_js()
     # The submit handler builds the account JSON, seals it to Ari's public key,
     # and shows `ari-mail:v1:<base64 ORIGINAL>`. All client-side, no network.
