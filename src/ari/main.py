@@ -47,7 +47,7 @@ from ari.domain.ports.gateway_port import IncomingMessage, OutgoingMessage
 from ari.domain.skills.models import InboundContext, RawInbound
 from ari.domain.schedule.quiet_hours import parse_window
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
-from ari.infrastructure.claude_env import claude_cli_env
+from ari.infrastructure.claude_env import claude_cli_env, with_mcp_startup_timeout
 from ari.infrastructure.logging_setup import setup_logging
 from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
 from ari.infrastructure.coder.verifier import CoderVerifier
@@ -125,7 +125,8 @@ def cli_env(settings: Settings) -> dict | None:
         logging.warning("ARI_CLAUDE_OAUTH_TOKEN is not set: Ari runs the claude CLI with "
                         "the host login, so that account's email is visible to Ari. "
                         "Run `claude setup-token` and put the token in .env.")
-    return env
+    # Always bound per-server MCP startup so a hung server can't burn the turn.
+    return with_mcp_startup_timeout(env, settings.mcp_startup_timeout_seconds)
 
 
 async def build(settings: Settings, env: dict | None, tz) -> Components:

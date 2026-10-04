@@ -34,7 +34,12 @@ class Settings(BaseSettings):
     # Tools / MCP (3A)
     mcp_config: str = "./mcp/servers.json"
     skills_dir: str = "./skills"
-    chat_timeout_seconds: int = 180
+    # Generous budget so slow MCP tools finish and Ari replies with the real
+    # answer; the backstop only fires if a tool genuinely hangs (TIMEOUT_REPLY).
+    chat_timeout_seconds: int = 900
+    # Per-server MCP startup budget (seconds). A dead server (e.g. an IMAP host
+    # with no listener) fails fast instead of burning the whole chat budget.
+    mcp_startup_timeout_seconds: int = 20
     # Concurrency (L1/L2): chat is capped by PTB's concurrent_updates; background
     # agents (missions, scheduled tasks, coding) share a separate bounded pool so
     # a flood never starves the interactive chat nor thrashes the host.

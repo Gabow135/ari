@@ -15,9 +15,8 @@ from ari.domain.tools.ari_permissions import CHAT, TASK
 
 log = logging.getLogger("ari.handle_message")
 BLANK_REPLY = "Mándame un mensaje de texto y con gusto te ayudo."
-TIMEOUT_REPLY = ("Me tardé demasiado con las herramientas; intenta con algo más "
-                 "acotado. Si me pediste agendar algo, revisa /recordatorios antes "
-                 "de repetirlo.")
+TIMEOUT_REPLY = ("Una herramienta se quedó colgada y corté la respuesta para no "
+                 "dejarte esperando. Probá de nuevo en un momento.")
 
 
 class HandleMessage:
