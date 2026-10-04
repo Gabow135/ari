@@ -78,7 +78,7 @@ async def test_unresolvable_target_errors_without_touching_data(tmp_path):
         b = tools_for("B")
         out = await b.listar_agenda(de_usuario="@nope")
         assert "no encontr" in out.lower()
-        assert await b.listar_agenda(de_usuario="@") != ""  # bare @ also errors cleanly
+        assert "no encontr" in (await b.listar_agenda(de_usuario="@")).lower()  # bare @ also errors cleanly
     finally:
         await conn.close()
 
