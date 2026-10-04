@@ -4,7 +4,7 @@ from ari.domain.tools.ari_permissions import (
     ARI_TOOLS, CHAT, HEARTBEAT, TASK, allowed_ari_tools)
 
 USER_CHAT = {"agendar", "listar_agenda", "cancelar", "recordar_dato", "olvidar_dato",
-             "ver_datos"}
+             "ver_datos", "compartir", "ver_permisos", "revocar_permiso"}
 
 
 def test_catalogue():
@@ -13,7 +13,8 @@ def test_catalogue():
                          "ver_accesos", "enviar_mensaje", "proponer_codigo", "proponer_comando",
                          "asignar_mision",
                          "ver_misiones", "cancelar_mision", "pedir_credenciales",
-                         "ver_skills", "activar_skill", "desactivar_skill")
+                         "ver_skills", "activar_skill", "desactivar_skill",
+                         "compartir", "ver_permisos", "revocar_permiso")
 
 
 def test_chat_permissions():
@@ -45,3 +46,16 @@ def test_proponer_comando_is_owner_chat_only():
     assert "proponer_comando" in allowed_ari_tools(True, CHAT)
     for owner, context in [(False, CHAT), (True, TASK), (True, HEARTBEAT), (False, TASK)]:
         assert "proponer_comando" not in allowed_ari_tools(owner, context)
+
+
+_GRANT_TOOLS = {"compartir", "ver_permisos", "revocar_permiso"}
+
+
+def test_grant_tools_allowed_for_any_user_in_chat():
+    assert _GRANT_TOOLS <= set(allowed_ari_tools(False, CHAT))
+    assert _GRANT_TOOLS <= set(allowed_ari_tools(True, CHAT))
+
+
+def test_grant_tools_denied_in_task_and_heartbeat():
+    assert _GRANT_TOOLS.isdisjoint(allowed_ari_tools(False, TASK))
+    assert _GRANT_TOOLS.isdisjoint(allowed_ari_tools(True, HEARTBEAT))
