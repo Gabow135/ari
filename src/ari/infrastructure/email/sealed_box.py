@@ -33,9 +33,10 @@ class AriSealedBox:
         return base64.b64encode(bytes(self._secret_key().public_key)).decode()
 
     def open(self, sealed_b64: str) -> bytes:
+        sk = self._secret_key()  # let vault errors propagate normally
         try:
             raw = base64.b64decode(sealed_b64, validate=True)
-            return SealedBox(self._secret_key()).decrypt(raw)
+            return SealedBox(sk).decrypt(raw)
         except (binascii.Error, ValueError) as exc:
             raise ValueError("blob ilegible") from exc
         except Exception as exc:  # nacl.exceptions.CryptoError and friends

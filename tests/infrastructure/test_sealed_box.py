@@ -36,6 +36,13 @@ def test_bad_blob_raises_value_error():
         box.open("not-base64-!!")
 
 
+def test_corrupt_ciphertext_raises_value_error():
+    box = AriSealedBox(FakeVault())
+    box.public_key_b64()  # ensure key is persisted
+    with pytest.raises(ValueError):
+        box.open(base64.b64encode(b"this is garbage, not a real sealed blob").decode())
+
+
 def test_unavailable_when_vault_cannot_store():
     box = AriSealedBox(FakeVault(writable=False))
     assert box.available() is False
