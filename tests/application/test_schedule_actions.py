@@ -80,3 +80,11 @@ async def test_list_text(store):
     assert "No tienes" in await actions.list_text("u1")
     await store.add("u1", "c1", REMINDER, "llamar a Juan", AT, None)
     assert "#1 · sáb 26/09 09:00 · llamar a Juan" in await actions.list_text("u1")
+
+
+from ari.application.schedule.schedule_actions import _INJECTION_RULE
+
+
+def test_injection_rule_covers_grant_tools():
+    assert "compartir" in _INJECTION_RULE
+    assert "revocar_permiso" in _INJECTION_RULE

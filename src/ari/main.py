@@ -47,6 +47,8 @@ from ari.domain.ports.gateway_port import IncomingMessage, OutgoingMessage
 from ari.domain.skills.models import InboundContext, RawInbound
 from ari.domain.schedule.quiet_hours import parse_window
 from ari.infrastructure.access.sqlite_access_store import SqliteAccessStore
+from ari.infrastructure.grants.sqlite_grant_store import SqliteGrantStore
+from ari.application.grants.grant_policy import GrantPolicy
 from ari.infrastructure.claude_env import claude_cli_env
 from ari.infrastructure.logging_setup import setup_logging
 from ari.infrastructure.coder.claude_code_coder import ClaudeCodeCoder
@@ -215,8 +217,14 @@ def main() -> None:
         for line in c.tools.status_text().splitlines():
             logging.info("conexión: %s", line)
         access_store = SqliteAccessStore(c.conn)
+        grants = GrantPolicy(SqliteGrantStore(c.conn))
+
+        async def _on_revoke(user_id: str) -> None:
+            await c.schedule_store.cancel_user(user_id)
+            await grants.forget_user(user_id)
+
         app.bot_data["gate"] = AccessGate(access_store, settings.owner_id_set,
-                                          on_revoke=c.schedule_store.cancel_user)
+                                          on_revoke=_on_revoke)
         if not settings.owner_id_set:
             logging.warning("ARI_OWNER_IDS is empty: nobody can approve access, "
                             "so every Telegram user will be blocked")

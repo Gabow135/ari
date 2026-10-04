@@ -14,6 +14,8 @@ from ari.infrastructure.persistence.sqlite_credential_requests import SqliteCred
 from ari.infrastructure.persistence.sqlite_missions import SqliteMissions
 from ari.infrastructure.persistence.sqlite_turn_log import SqliteTurnLog
 from ari.infrastructure.schedule.sqlite_schedule_store import SqliteScheduleStore
+from ari.infrastructure.grants.sqlite_grant_store import SqliteGrantStore
+from ari.application.grants.grant_policy import GrantPolicy
 from ari.application.skills.skill_manager import SkillManager
 from ari.mcp_server.server import actor_from_env, build_server
 
@@ -27,19 +29,26 @@ async def _get_tools() -> AriTools:
         env = os.environ
         conn = await open_existing(env["ARI_DB_PATH"])
         schedule, access = SqliteScheduleStore(conn), SqliteAccessStore(conn)
+        grants = GrantPolicy(SqliteGrantStore(conn))
         owners = {o.strip() for o in env.get("ARI_OWNER_IDS", "").split(",") if o.strip()}
+
+        async def _on_revoke(user_id: str) -> None:
+            await schedule.cancel_user(user_id)
+            await grants.forget_user(user_id)
+
         _tools = AriTools(
             actor_from_env(env), schedule=schedule,
-            memory=SqliteMemoryAdapter(conn, embedding_dim=1),  # facts only, no vectors
+            memory=SqliteMemoryAdapter(conn, embedding_dim=1),
             turn_log=SqliteTurnLog(conn), tz=ZoneInfo(env.get("ARI_TIMEZONE", "UTC")),
             max_items=int(env.get("ARI_MAX_ITEMS", "20")),
             clock=lambda: datetime.now(timezone.utc),
-            gate=AccessGate(access, owners, on_revoke=schedule.cancel_user), access=access,
+            gate=AccessGate(access, owners, on_revoke=_on_revoke), access=access,
             coding=SqliteCodingRequests(conn),
             commands=SqliteCommandRequests(conn),
             missions=SqliteMissions(conn),
             credentials=SqliteCredentialRequests(conn),
-            skills=SkillManager(env.get("ARI_SKILLS_DIR", "./skills"), load=False))
+            skills=SkillManager(env.get("ARI_SKILLS_DIR", "./skills"), load=False),
+            grants=grants)
     return _tools
 
 
