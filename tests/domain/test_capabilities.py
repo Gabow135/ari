@@ -42,6 +42,14 @@ def test_owner_is_told_to_code_from_natural_language():
     assert "proponer_codigo" in low
 
 
+def test_owner_is_told_not_to_run_commands_unprompted():
+    low = render_capabilities(is_owner=True).lower()
+    # Commands run only when the owner explicitly asks; Ari must never reach for
+    # the shell on its own initiative to progress a task or fetch data.
+    assert "solo cuando te lo pida" in low
+    assert "nunca propongas ni corras un comando por tu cuenta" in low
+
+
 def test_proactivity_limitations_removed():
     text = " ".join(LIMITATIONS)
     assert "iniciativa propia" not in text and "recordatorios" not in text
