@@ -60,6 +60,21 @@ async def test_remove_and_delete_for_user(store):
     assert await store.delete_for_user("7") == 1
 
 
+async def test_remove_and_delete_for_user_need_no_cipher(store):
+    await store.add(_acct(label="x"))
+    await store.add(_acct(label="y"))
+    cipherless = SqliteEmailAccounts(store._conn, None)
+    assert await cipherless.remove("7", "x") is True
+    assert await cipherless.remove("7", "nope") is False
+    rows_after_remove = await store._conn.execute_fetchall(
+        "SELECT label FROM user_email_accounts WHERE user_id = '7'")
+    assert [r["label"] for r in rows_after_remove] == ["y"]
+    assert await cipherless.delete_for_user("7") == 1
+    rows_after_delete = await store._conn.execute_fetchall(
+        "SELECT label FROM user_email_accounts WHERE user_id = '7'")
+    assert rows_after_delete == []
+
+
 async def test_list_without_cipher_raises(store):
     await store.add(_acct())
     with pytest.raises(RuntimeError):
