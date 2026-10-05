@@ -30,17 +30,17 @@ class UserWorkspace:
     def resolve(self, rel: str) -> str:
         raw = (rel or "").strip()
         if os.path.isabs(raw):
-            raise ValueError(f"ruta absoluta no permitida: {raw}")
+            raise ValueError(f"absolute path not allowed: {raw}")
         path = os.path.realpath(os.path.join(self._root, raw))
         root = os.path.realpath(self._root)
         if path != root and not path.startswith(root + os.sep):
-            raise ValueError(f"ruta fuera del workspace: {raw}")
+            raise ValueError(f"path escapes workspace: {raw}")
         return path
 
     def write_text(self, rel: str, content: str) -> str:
         data = (content or "").encode("utf-8")
         if len(data) > self._max:
-            raise ValueError(f"archivo demasiado grande (> {self._max} bytes)")
+            raise ValueError(f"content too large (> {self._max} bytes)")
         self.ensure()
         path = self.resolve(rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -53,7 +53,7 @@ class UserWorkspace:
         if not os.path.isfile(path):
             raise FileNotFoundError(rel)
         if os.path.getsize(path) > self._max:
-            raise ValueError("archivo demasiado grande para leer")
+            raise ValueError("file too large to read")
         with open(path, encoding="utf-8", errors="replace") as f:
             return f.read()
 
@@ -67,7 +67,7 @@ class UserWorkspace:
     def delete(self, rel: str) -> None:
         path = self.resolve(rel)
         if path == os.path.realpath(self._root):
-            raise ValueError("no se puede borrar la raíz del workspace")
+            raise ValueError("cannot delete workspace root")
         if not os.path.isfile(path):
             raise FileNotFoundError(rel)
         os.remove(path)
