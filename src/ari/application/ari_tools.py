@@ -53,7 +53,8 @@ class AriTools:
     def __init__(self, actor: Actor, *, schedule, memory, turn_log, tz, max_items: int,
                  clock, gate=None, access=None, coding=None, commands=None, missions=None,
                  credentials=None, skills=None, grants=None,
-                 email_accounts=None, email_enroll=None):
+                 email_accounts=None, email_enroll=None,
+                 workspaces=None, sql_sandbox=None, runner=None):
         self._a, self._schedule, self._memory, self._log = actor, schedule, memory, turn_log
         self._tz, self._max, self._clock = tz, max_items, clock
         self._gate, self._access = gate, access
@@ -65,6 +66,9 @@ class AriTools:
         self._grants = grants  # GrantPolicy | None
         self._email_accounts = email_accounts  # EmailAccountsPort | None
         self._email_enroll = email_enroll      # SqliteEmailEnrollRequests | None
+        self._ws_factory = workspaces  # Workspaces | None
+        self._sql = sql_sandbox        # SqliteSandbox | None
+        self._runner = runner          # ShellRunner | None
 
     def _allowed(self, tool: str) -> bool:
         if tool in allowed_ari_tools(self._a.is_owner, self._a.context):
@@ -191,6 +195,60 @@ class AriTools:
         if not facts:
             return "No tengo datos guardados de ti."
         return "\n".join(f"- {f.key}: {f.value}" for f in facts)
+
+    # ---- workspace (files) ------------------------------------------------
+
+    def _ws(self):
+        return self._ws_factory.for_user(self._a.user_id)
+
+    async def escribir_archivo(self, ruta: str, contenido: str) -> str:
+        if not self._allowed("escribir_archivo"):
+            return DENIED
+        if self._ws_factory is None:
+            return "El espacio de trabajo no está disponible."
+        try:
+            rel = self._ws().write_text(ruta, contenido or "")
+        except (ValueError, OSError) as exc:
+            return f"No pude escribir el archivo: {exc}"
+        return await self._receipt(f"📝 Guardé {rel}")
+
+    async def leer_archivo(self, ruta: str) -> str:
+        if not self._allowed("leer_archivo"):
+            return DENIED
+        if self._ws_factory is None:
+            return "El espacio de trabajo no está disponible."
+        try:
+            return self._ws().read_text(ruta)
+        except FileNotFoundError:
+            return f"No existe el archivo: {ruta}"
+        except (ValueError, OSError) as exc:
+            return f"No pude leer el archivo: {exc}"
+
+    async def listar_archivos(self, ruta: str = ".") -> str:
+        if not self._allowed("listar_archivos"):
+            return DENIED
+        if self._ws_factory is None:
+            return "El espacio de trabajo no está disponible."
+        try:
+            items = self._ws().list(ruta)
+        except (FileNotFoundError, NotADirectoryError):
+            return f"No existe la carpeta: {ruta}"
+        except (ValueError, OSError) as exc:
+            return f"No pude listar: {exc}"
+        return "\n".join(items) if items else "(vacío)"
+
+    async def borrar_archivo(self, ruta: str) -> str:
+        if not self._allowed("borrar_archivo"):
+            return DENIED
+        if self._ws_factory is None:
+            return "El espacio de trabajo no está disponible."
+        try:
+            self._ws().delete(ruta)
+        except FileNotFoundError:
+            return f"No existe el archivo: {ruta}"
+        except (ValueError, OSError) as exc:
+            return f"No pude borrar: {exc}"
+        return await self._receipt(f"🗑️ Borré {ruta}")
 
     # ---- cross-user grants ------------------------------------------------
 
