@@ -27,6 +27,8 @@ async def _get_tools() -> AriTools:
     global _tools
     if _tools is None:
         from ari.infrastructure.command.shell_runner import ShellRunner
+        from ari.infrastructure.email.imap_email_reader import ImapEmailReader
+        from ari.infrastructure.email.server_spec import mailboxes_from_json
         from ari.infrastructure.email.sqlite_email_accounts import SqliteEmailAccounts
         from ari.infrastructure.persistence.sqlite_email_enroll_requests import (
             SqliteEmailEnrollRequests,
@@ -35,6 +37,8 @@ async def _get_tools() -> AriTools:
         from ari.infrastructure.workspace.user_workspace import Workspaces
         env = os.environ
         conn = await open_existing(env["ARI_DB_PATH"])
+        mailboxes = mailboxes_from_json(env.get("ARI_EMAIL_ACCOUNTS", ""))
+        email_reader = ImapEmailReader() if mailboxes else None
         schedule, access = SqliteScheduleStore(conn), SqliteAccessStore(conn)
         grants = GrantPolicy(SqliteGrantStore(conn))
         owners = {o.strip() for o in env.get("ARI_OWNER_IDS", "").split(",") if o.strip()}
@@ -72,7 +76,8 @@ async def _get_tools() -> AriTools:
             sql_sandbox=SqliteSandbox(),
             runner=ShellRunner(timeout=60.0),
             files=SqliteFileRequests(conn),
-            denied_roots=denied_roots)
+            denied_roots=denied_roots,
+            email_reader=email_reader, mailboxes=mailboxes)
     return _tools
 
 

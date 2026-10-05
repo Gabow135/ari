@@ -163,3 +163,34 @@ async def test_stdio_handshake_lists_tools_without_actor_env():
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
+
+
+async def test_email_reading_tools_are_registered_and_delegate():
+    """buscar_correos and leer_correo are exposed by build_server and delegate to AriTools."""
+    calls: dict[str, object] = {}
+
+    class FakeTools:
+        async def buscar_correos(self, cuenta: str, criterio: str = "", limite: int = 10) -> str:
+            calls["buscar"] = (cuenta, criterio, limite)
+            return "ok-buscar"
+
+        async def leer_correo(self, cuenta: str, id: str) -> str:
+            calls["leer"] = (cuenta, id)
+            return "ok-leer"
+
+    fake = FakeTools()
+
+    async def get_tools():
+        return fake
+
+    server = build_server(get_tools)
+    names = {t.name for t in await server.list_tools()}
+    assert {"buscar_correos", "leer_correo"} <= names
+
+    result_buscar = await server.call_tool("buscar_correos", {"cuenta": "corp", "criterio": "asunto:hola", "limite": 5})
+    assert result_buscar.content[0].text == "ok-buscar"
+    assert calls["buscar"] == ("corp", "asunto:hola", 5)
+
+    result_leer = await server.call_tool("leer_correo", {"cuenta": "corp", "id": "42"})
+    assert result_leer.content[0].text == "ok-leer"
+    assert calls["leer"] == ("corp", "42")

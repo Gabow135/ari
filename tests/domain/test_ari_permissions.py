@@ -1,11 +1,11 @@
 import pytest
 
-from ari.domain.tools.ari_permissions import (
-    ARI_TOOLS, CHAT, HEARTBEAT, TASK, allowed_ari_tools)
+from ari.domain.tools.ari_permissions import ARI_TOOLS, CHAT, HEARTBEAT, TASK, allowed_ari_tools
 
 USER_CHAT = {"agendar", "listar_agenda", "cancelar", "recordar_dato", "olvidar_dato",
              "ver_datos", "compartir", "ver_permisos", "revocar_permiso",
              "conectar_correo", "mis_correos", "olvidar_correo",
+             "buscar_correos", "leer_correo",
              "escribir_archivo", "leer_archivo", "listar_archivos",
              "borrar_archivo", "consultar_sql", "leer_documento"}
 
@@ -19,6 +19,7 @@ def test_catalogue():
                          "ver_skills", "activar_skill", "desactivar_skill",
                          "compartir", "ver_permisos", "revocar_permiso",
                          "conectar_correo", "mis_correos", "olvidar_correo",
+                         "buscar_correos", "leer_correo",
                          "escribir_archivo", "leer_archivo", "listar_archivos",
                          "borrar_archivo", "consultar_sql", "ejecutar", "leer_documento",
                          "abrir_archivo")
@@ -66,3 +67,19 @@ def test_grant_tools_allowed_for_any_user_in_chat():
 def test_grant_tools_denied_in_task_and_heartbeat():
     assert _GRANT_TOOLS.isdisjoint(allowed_ari_tools(False, TASK))
     assert _GRANT_TOOLS.isdisjoint(allowed_ari_tools(True, HEARTBEAT))
+
+
+def test_email_reading_allowed_for_owner_chat():
+    allowed = allowed_ari_tools(True, CHAT)
+    assert "buscar_correos" in allowed and "leer_correo" in allowed
+
+
+def test_email_reading_allowed_for_user_chat():
+    allowed = allowed_ari_tools(False, CHAT)
+    assert "buscar_correos" in allowed and "leer_correo" in allowed
+
+
+def test_email_reading_absent_in_task_and_heartbeat():
+    for ctx in (TASK, HEARTBEAT):
+        allowed = allowed_ari_tools(True, ctx)
+        assert "buscar_correos" not in allowed and "leer_correo" not in allowed
