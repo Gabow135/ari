@@ -20,7 +20,8 @@ def test_catalogue():
                          "compartir", "ver_permisos", "revocar_permiso",
                          "conectar_correo", "mis_correos", "olvidar_correo",
                          "escribir_archivo", "leer_archivo", "listar_archivos",
-                         "borrar_archivo", "consultar_sql", "ejecutar", "leer_documento")
+                         "borrar_archivo", "consultar_sql", "ejecutar", "leer_documento",
+                         "abrir_archivo")
 
 
 def test_chat_permissions():

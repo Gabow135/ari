@@ -120,6 +120,15 @@ async def test_ejecutar_registered_only_for_owner_chat():
     assert "ejecutar" in owner and "ejecutar" not in user
 
 
+async def test_abrir_archivo_registered_only_for_owner_chat():
+    async def get_tools():
+        raise AssertionError("not called")
+    from ari.domain.tools.ari_permissions import allowed_ari_tools
+    owner = {t.name for t in await build_server(get_tools, allowed_ari_tools(True, "chat")).list_tools()}
+    user = {t.name for t in await build_server(get_tools, allowed_ari_tools(False, "chat")).list_tools()}
+    assert "abrir_archivo" in owner and "abrir_archivo" not in user
+
+
 async def test_stdio_handshake_lists_tools_without_actor_env():
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "ari.mcp_server",

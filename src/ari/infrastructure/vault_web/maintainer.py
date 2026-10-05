@@ -2,12 +2,15 @@
 starts the HTTPS server on demand, hands out links, and shuts the server down when no
 tokens remain."""
 import logging
+import os
 import socket
 import threading
 import time
 from collections.abc import Callable
 
 from ari.infrastructure.vault_web.cert import ensure_cert
+from ari.infrastructure.vault_web.file_link_store import FileLinkStore
+from ari.infrastructure.vault_web.fs_denylist import is_denied
 from ari.infrastructure.vault_web.link_store import VaultLinkStore
 from ari.infrastructure.vault_web.names import configurable_secret_names
 from ari.infrastructure.vault_web.server import VaultWebServer
@@ -30,11 +33,14 @@ def detect_lan_ip() -> str:
 class VaultWebMaintainer:
     def __init__(self, vault, servers_json: str, cert_dir: str, port: int, bind: str,
                  ttl_minutes: int, clock=time.monotonic,
-                 extra_names: Callable[[], list[str]] | None = None):
+                 extra_names: Callable[[], list[str]] | None = None,
+                 denied_roots: list[str] = ()):
         self._vault = vault
         self._servers_json = servers_json
         self._cert_dir, self._port, self._bind = cert_dir, port, bind
         self._store = VaultLinkStore(ttl_minutes * 60, clock)
+        self._file_store = FileLinkStore(ttl_minutes * 60, clock)
+        self._denied_roots = list(denied_roots)
         self._server: VaultWebServer | None = None
         self._lan_ip: str | None = None
         self._lock = threading.Lock()
@@ -65,16 +71,39 @@ class VaultWebMaintainer:
                 cert, key = ensure_cert(self._cert_dir, lan_ip)
                 names = self._writable_names()
                 self._server = VaultWebServer(self._bind, self._port, cert, key,
-                                              self._vault, self._store, names)
+                                              self._vault, self._store, names,
+                                              file_store=self._file_store,
+                                              denied_roots=self._denied_roots)
                 self._server.start()
             else:
                 self._server.set_names(self._writable_names())
             token = self._store.create()
             return f"https://{self._lan_ip}:{self._server.port}/v/{token}"
 
+    def new_file_link(self, path: str) -> str:
+        real = os.path.realpath(os.path.expanduser(path))
+        if not os.path.isfile(real):
+            raise FileNotFoundError(path)
+        if is_denied(real, self._denied_roots):
+            raise PermissionError(f"denied path: {path}")
+        with self._lock:
+            if self._server is None:
+                lan_ip = detect_lan_ip()
+                self._lan_ip = lan_ip
+                cert, key = ensure_cert(self._cert_dir, lan_ip)
+                self._server = VaultWebServer(self._bind, self._port, cert, key,
+                                              self._vault, self._store, self._writable_names(),
+                                              file_store=self._file_store,
+                                              denied_roots=self._denied_roots)
+                self._server.start()
+            token = self._file_store.create(real)
+            return f"https://{self._lan_ip}:{self._server.port}/f/{token}"
+
     def sweep_and_maybe_stop(self) -> None:
         with self._lock:
-            if self._server is not None and self._store.active_count() == 0:
+            if (self._server is not None
+                    and self._store.active_count() == 0
+                    and self._file_store.active_count() == 0):
                 self._server.stop()
                 self._server = None
                 self._lan_ip = None

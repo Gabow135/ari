@@ -48,6 +48,11 @@ async def _get_tools() -> AriTools:
 
         workspaces = Workspaces(env.get(
             "ARI_WORKSPACES_DIR", os.path.expanduser("~/.ari/workspaces")))
+        from ari.infrastructure.persistence.sqlite_file_requests import SqliteFileRequests
+        from ari.infrastructure.vault_web.fs_denylist import default_denied_roots
+        denied_roots = default_denied_roots(
+            env.get("ARI_VAULT_PATH", "~/.ari/vault.enc"),
+            env.get("ARI_CLAUDE_CONFIG_DIR", "./.ari-claude"))
         _tools = AriTools(
             actor_from_env(env), schedule=schedule,
             memory=SqliteMemoryAdapter(conn, embedding_dim=1),
@@ -65,7 +70,9 @@ async def _get_tools() -> AriTools:
             email_enroll=email_enroll,
             workspaces=workspaces,
             sql_sandbox=SqliteSandbox(),
-            runner=ShellRunner(timeout=60.0))
+            runner=ShellRunner(timeout=60.0),
+            files=SqliteFileRequests(conn),
+            denied_roots=denied_roots)
     return _tools
 
 

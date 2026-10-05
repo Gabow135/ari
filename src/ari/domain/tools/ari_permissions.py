@@ -11,7 +11,8 @@ ARI_TOOLS = ("agendar", "listar_agenda", "cancelar", "recordar_dato", "olvidar_d
              "compartir", "ver_permisos", "revocar_permiso",
              "conectar_correo", "mis_correos", "olvidar_correo",
              "escribir_archivo", "leer_archivo", "listar_archivos",
-             "borrar_archivo", "consultar_sql", "ejecutar", "leer_documento")
+             "borrar_archivo", "consultar_sql", "ejecutar", "leer_documento",
+             "abrir_archivo")
 
 _READ = {"listar_agenda", "ver_datos"}
 _USER_CHAT = _READ | {"agendar", "cancelar", "recordar_dato", "olvidar_dato",

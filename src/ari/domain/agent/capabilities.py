@@ -132,6 +132,12 @@ CAPABILITIES: list[Capability] = [
         command="skill_off", menu="Desactivar skill", owner_only=True,
         summary="Desactiva un skill sin reiniciar a Ari.",
         usage="/skill_off <nombre>"),
+    Capability(
+        owner_only=True,
+        summary="Abrir un archivo de la Mac en el navegador con abrir_archivo: prepara un "
+                "link seguro en la red local (un solo uso, vence pronto, HTTPS). Sirve "
+                "cualquier archivo MENOS secretos (vault, .env, ~/.ssh, llaves). Úsalo "
+                "cuando tu creador quiera ver/abrir un archivo que está en su Mac."),
 ]
 
 # What Ari can NOT do yet — so it never promises it, and can propose how to get it.

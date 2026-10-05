@@ -126,6 +126,7 @@ class Components:
     sealed_box: object
     email_accounts: object
     email_enroll: object
+    file_requests: object
 
 
 def cli_env(settings: Settings) -> dict | None:
@@ -154,8 +155,12 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     email_accounts = SqliteEmailAccounts(conn, email_cipher)
     sealed_box = AriSealedBox(vault)
     email_enroll = SqliteEmailEnrollRequests(conn)
+    from ari.infrastructure.persistence.sqlite_file_requests import SqliteFileRequests
+    file_requests = SqliteFileRequests(conn)
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     workspaces_abs = os.path.abspath(os.path.expanduser(settings.workspaces_dir))
+    from ari.infrastructure.vault_web.fs_denylist import default_denied_roots
+    denied_roots = default_denied_roots(settings.vault_path, settings.claude_config_dir)
     sensitive = (project_root, settings.vault_path,
                  os.path.join(project_root, ".env"),
                  os.path.abspath(settings.claude_config_dir), workspaces_abs)
@@ -170,6 +175,8 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         "ARI_OWNER_IDS": ",".join(sorted(settings.owner_id_set)),
         "ARI_SKILLS_DIR": os.path.abspath(settings.skills_dir),
         "ARI_WORKSPACES_DIR": workspaces_abs,
+        "ARI_VAULT_PATH": os.path.expanduser(settings.vault_path),
+        "ARI_CLAUDE_CONFIG_DIR": os.path.abspath(settings.claude_config_dir),
     })
     turn_config_writer = TurnConfigWriter(os.path.join(settings.claude_config_dir, "mcp"))
     tools = ToolPolicy(registry, Authorizer(settings.owner_id_set).is_owner, ari=ari_spec,
@@ -207,10 +214,10 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     vault_web = VaultWebMaintainer(
         vault, settings.mcp_config, cert_dir=cert_dir, port=settings.vault_web_port,
         bind=settings.vault_web_bind, ttl_minutes=settings.vault_web_ttl_minutes,
-        extra_names=skills.required_secret_names)
+        extra_names=skills.required_secret_names, denied_roots=denied_roots)
     return Components(handler, conn, memory, llm, schedule_store, actions, agent, soul, tools,
                       turn_log, turn_config_writer, vault_web, skills,
-                      sealed_box, email_accounts, email_enroll)
+                      sealed_box, email_accounts, email_enroll, file_requests)
 
 
 def main() -> None:
@@ -340,6 +347,8 @@ def main() -> None:
         command_runner = CommandRequestRunner(command_requests, command_store, send, _utcnow)
         credential_requests = SqliteCredentialRequests(c.conn)
         credential_runner = CredentialRequestRunner(credential_requests, c.vault_web, send, _utcnow)
+        from ari.application.files.request_runner import FileServeRequestRunner
+        file_runner = FileServeRequestRunner(c.file_requests, c.vault_web, send, _utcnow)
 
         async def send_document(chat_id: str, filename: str, content: bytes) -> None:
             await app.bot.send_document(chat_id=int(chat_id), document=content, filename=filename)
@@ -368,6 +377,10 @@ def main() -> None:
                 await credential_runner()
             except Exception:
                 log.exception("credential request runner failed")
+            try:
+                await file_runner()
+            except Exception:
+                log.exception("file request runner failed")
             try:
                 await enroll_runner()
             except Exception:
@@ -409,6 +422,7 @@ def main() -> None:
                        f"Se interrumpió un comando pendiente: {truncate(stranded.command)}")
         for r in await credential_requests.reset_taken():
             await send(r.chat_id, "Retomo tu pedido de credencial…")
+        await c.file_requests.reset_taken()
 
         missions = SqliteMissions(c.conn)
         stranded_missions = await missions.reset_running()
@@ -430,8 +444,8 @@ def main() -> None:
         )
 
         scheduler = Scheduler([due, notices.tick, heartbeat, flusher, coding_runner,
-                               command_runner, mission_runner, credential_runner, enroll_runner,
-                               vault_web_sweep, consolidator])
+                               command_runner, mission_runner, credential_runner, file_runner,
+                               enroll_runner, vault_web_sweep, consolidator])
         scheduler.start()
         app.bot_data["scheduler"] = scheduler
 

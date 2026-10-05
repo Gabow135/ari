@@ -6,6 +6,8 @@ import base64
 import hashlib
 import html
 import logging
+import mimetypes
+import os
 import ssl
 import threading
 import urllib.parse
@@ -266,9 +268,11 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # suppress default (would log the token)
         pass
 
-    def _token(self):
+    def _route(self):
         parts = [p for p in self.path.split("?", 1)[0].split("/") if p]
-        return parts[1] if len(parts) == 2 and parts[0] == "v" else None
+        if len(parts) == 2 and parts[0] in ("v", "f"):
+            return parts[0], parts[1]
+        return None, None
 
     def _reply(self, status: int, body: str, ctype: str = "text/html; charset=utf-8"):
         data = body.encode("utf-8")
@@ -288,17 +292,48 @@ class _Handler(BaseHTTPRequestHandler):
         log.info("%s /v/<redacted> -> %s", self.command, status)  # redacted
 
     def do_GET(self):
-        token = self._token()
-        if token is None:
+        kind, token = self._route()
+        if kind == "f":
+            return self._serve_file(token)
+        if kind != "v":
             return self._reply(404, "no encontrado", "text/plain; charset=utf-8")
         if not self.server.store.valid(token):
             return self._reply(403, "Link vencido o inválido.", "text/plain; charset=utf-8")
         have = set(self.server.vault.names())
         self._reply(200, _render(token, self.server.names, have, []))
 
+    def _serve_file(self, token):
+        from ari.infrastructure.vault_web.fs_denylist import is_denied
+        store = getattr(self.server, "file_store", None)
+        path = store.claim(token) if store is not None else None
+        if path is None:
+            return self._reply(403, "Link vencido o inválido.", "text/plain; charset=utf-8")
+        if is_denied(path, getattr(self.server, "denied_roots", ())) or not os.path.isfile(path):
+            log.warning("file serve refused: %s", path)
+            return self._reply(404, "no encontrado", "text/plain; charset=utf-8")
+        ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        try:
+            size = os.path.getsize(path)
+            with open(path, "rb") as fh:
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(size))
+                self.send_header("Content-Disposition",
+                                 f'inline; filename="{os.path.basename(path)}"')
+                self.end_headers()
+                while True:
+                    chunk = fh.read(65536)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        except OSError as exc:
+            log.warning("file serve failed for %s: %s", path, exc)
+            return
+        log.info("served file %s (%d bytes)", path, size)
+
     def do_POST(self):
-        token = self._token()
-        if token is None:
+        kind, token = self._route()
+        if kind != "v":
             return self._reply(404, "no encontrado", "text/plain; charset=utf-8")
         if not self.server.store.valid(token):
             return self._reply(403, "Link vencido o inválido.", "text/plain; charset=utf-8")
@@ -319,10 +354,13 @@ class _Handler(BaseHTTPRequestHandler):
 
 class VaultWebServer:
     def __init__(self, bind: str, port: int, cert_path: str, key_path: str,
-                 vault, store, names: list[str]):
+                 vault, store, names: list[str],
+                 file_store=None, denied_roots=()):
         self._bind, self._port = bind, port
         self._cert, self._key = cert_path, key_path
         self._vault, self._store, self._names = vault, store, names
+        self._file_store = file_store
+        self._denied_roots = denied_roots
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -335,6 +373,7 @@ class VaultWebServer:
             return
         httpd = ThreadingHTTPServer((self._bind, self._port), _Handler)
         httpd.vault, httpd.store, httpd.names = self._vault, self._store, self._names
+        httpd.file_store, httpd.denied_roots = self._file_store, self._denied_roots
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(self._cert, self._key)
         httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)

@@ -228,4 +228,12 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         (PDF, Excel .xlsx, CSV o .txt). ruta es relativa, p. ej. "facturas/sweetcoffee.pdf"."""
         return await (await get_tools()).leer_documento(ruta)
 
+    @tool("abrir_archivo")
+    async def abrir_archivo(ruta: str) -> str:
+        """(Solo dueño) Prepara un link seguro en la red local (un solo uso, vence
+        pronto) para abrir un archivo de la Mac en el navegador. ruta: la ruta del
+        archivo (p. ej. "/Users/.../Desktop/factura.pdf"). No comparte secretos
+        (vault, .env, ~/.ssh, llaves)."""
+        return await (await get_tools()).abrir_archivo(ruta)
+
     return server

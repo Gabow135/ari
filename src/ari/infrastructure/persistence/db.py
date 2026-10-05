@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS credential_requests (
   created_at TEXT NOT NULL, detail TEXT);
 CREATE INDEX IF NOT EXISTS idx_credential_requests_status ON credential_requests(status, id);
 
+CREATE TABLE IF NOT EXISTS file_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  status TEXT NOT NULL,
+  detail TEXT,
+  created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_file_requests_status ON file_requests(status, id);
+
 CREATE TABLE IF NOT EXISTS command_requests (
   id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, chat_id TEXT NOT NULL,
   command TEXT NOT NULL, status TEXT NOT NULL,

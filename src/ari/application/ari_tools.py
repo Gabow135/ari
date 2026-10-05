@@ -2,6 +2,7 @@
 Ari (never chosen by the model), checks the permission table, validates with the
 domain rules, and records a code-generated receipt for each change."""
 import logging
+import os
 from dataclasses import dataclass
 
 from ari.application.access.gate import normalize_code
@@ -14,6 +15,7 @@ from ari.domain.memory.fact_keys import normalize_key
 from ari.domain.schedule.actions import ActionError, next_cron_run, parse_action
 from ari.domain.schedule.entities import ACTIVE, CANCELLED, PAUSED, REMINDER, RUNNING, TASK
 from ari.domain.tools.ari_permissions import allowed_ari_tools
+from ari.infrastructure.vault_web.fs_denylist import is_denied
 from ari.infrastructure.workspace.documents import extract_document
 
 log = logging.getLogger("ari.tools")
@@ -75,7 +77,8 @@ class AriTools:
                  clock, gate=None, access=None, coding=None, commands=None, missions=None,
                  credentials=None, skills=None, grants=None,
                  email_accounts=None, email_enroll=None,
-                 workspaces=None, sql_sandbox=None, runner=None):
+                 workspaces=None, sql_sandbox=None, runner=None,
+                 files=None, denied_roots=()):
         self._a, self._schedule, self._memory, self._log = actor, schedule, memory, turn_log
         self._tz, self._max, self._clock = tz, max_items, clock
         self._gate, self._access = gate, access
@@ -90,6 +93,8 @@ class AriTools:
         self._ws_factory = workspaces  # Workspaces | None
         self._sql = sql_sandbox        # SqliteSandbox | None
         self._runner = runner          # ShellRunner | None
+        self._files = files            # SqliteFileRequests | None
+        self._denied_roots = list(denied_roots)
 
     def _allowed(self, tool: str) -> bool:
         if tool in allowed_ari_tools(self._a.is_owner, self._a.context):
@@ -536,6 +541,22 @@ class AriTools:
             return "No pude prepararlo: la cola de credenciales no está disponible."
         await self._credentials.add(self._a.user_id, self._a.chat_id, text)
         return await self._receipt(f"🔑 Te preparo el link seguro para: {truncate(text)}")
+
+    async def abrir_archivo(self, ruta: str) -> str:
+        if not self._allowed("abrir_archivo"):
+            return DENIED
+        if self._files is None:
+            return "No pude prepararlo: la cola de archivos no está disponible."
+        ruta = (ruta or "").strip()
+        if not ruta:
+            return "No me pasaste ninguna ruta."
+        real = os.path.realpath(os.path.expanduser(ruta))
+        if not os.path.isfile(real):
+            return f"No existe el archivo: {ruta}"
+        if is_denied(real, self._denied_roots):
+            return "No comparto ese archivo: está en la lista de rutas protegidas (secretos)."
+        await self._files.add(self._a.user_id, self._a.chat_id, real)
+        return await self._receipt(f"🔗 Te preparo el link para abrir «{os.path.basename(real)}»")
 
     async def ver_skills(self) -> str:
         if not self._allowed("ver_skills"):
