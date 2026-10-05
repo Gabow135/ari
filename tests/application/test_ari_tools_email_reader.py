@@ -76,8 +76,6 @@ async def test_buscar_connection_error_is_friendly(env):
     assert "pw" not in out  # never leaks the password
 
 
-
-
 def _msg(body="Total: 1.234 USD", attachments=()):
     return FetchedEmail("7", "pay@mrjoy.com", "me@corp.com", "Factura",
                         "5 Oct", body, tuple(attachments))
@@ -105,12 +103,15 @@ async def test_leer_correo_saves_attachments(env):
 
 
 async def test_leer_correo_sanitizes_attachment_name(env):
+    _conn, workspaces, _ = env
     att = EmailAttachment("../../etc/passwd", "text/plain", b"x")
     out = await _tools(env, reader=FakeReader(message=_msg(attachments=[att]))
                        ).leer_correo("email_corp", "7")
     # saved safely inside the per-email folder, never escaping
     assert "correos/adjuntos/email_corp-7/" in out
     assert ".." not in out.split("Adjuntos")[-1]
+    ws = workspaces.for_user("42")
+    assert ws.read_bytes("correos/adjuntos/email_corp-7/01-passwd") == b"x"
 
 
 async def test_leer_correo_truncates_body_over_text_cap(env):
