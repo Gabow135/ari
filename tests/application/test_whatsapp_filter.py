@@ -23,3 +23,11 @@ def test_no_match_returns_false():
 
 def test_empty_filter_notifies_nothing():
     assert not passes_filter("Ana", "x@s.whatsapp.net", "hola", _f())
+
+
+def test_bare_combining_mark_keyword_does_not_match_everything():
+    assert not passes_filter("Ana", "x@s.whatsapp.net", "hola", _f(keywords={"́"}))
+
+
+def test_contact_match_is_accent_insensitive():
+    assert passes_filter("José Pérez", "x@s.whatsapp.net", "hola", _f(contacts={"jose perez"}))

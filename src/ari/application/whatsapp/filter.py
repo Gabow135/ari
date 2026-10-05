@@ -22,4 +22,4 @@ def passes_filter(contact_name: str, wa_chat_id: str, text: str, f: WhatsAppFilt
         if cn and (cn == name_n or cn in number_n):
             return True
     text_n = _norm(text)
-    return any(_norm(k) in text_n for k in f.keywords if k.strip())
+    return any((kn := _norm(k)) and kn in text_n for k in f.keywords)
