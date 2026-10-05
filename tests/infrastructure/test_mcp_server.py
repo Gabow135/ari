@@ -87,6 +87,39 @@ async def test_build_server_with_allowed_list_exposes_only_those_tools():
         await conn.close()
 
 
+async def test_workspace_tools_callable_over_server(tmp_path):
+    from ari.infrastructure.workspace.user_workspace import Workspaces
+    conn = await connect(":memory:", embedding_dim=4)
+    tools = AriTools(actor_from_env(ENV), schedule=SqliteScheduleStore(conn),
+                     memory=SqliteMemoryAdapter(conn, embedding_dim=4),
+                     turn_log=SqliteTurnLog(conn), tz=TZ, max_items=20, clock=lambda: NOW,
+                     workspaces=Workspaces(str(tmp_path)))
+
+    async def get_tools():
+        return tools
+
+    server = build_server(get_tools)
+    try:
+        names = {t.name for t in await server.list_tools()}
+        assert {"escribir_archivo", "leer_archivo", "listar_archivos",
+                "borrar_archivo", "consultar_sql", "ejecutar"} <= names
+        await server.call_tool("escribir_archivo", {"ruta": "a.txt", "contenido": "hola"})
+        read = await server.call_tool("leer_archivo", {"ruta": "a.txt"})
+        assert read.content[0].text == "hola"
+    finally:
+        await conn.close()
+
+
+async def test_ejecutar_registered_only_for_owner_chat():
+    async def get_tools():
+        raise AssertionError("not called")
+
+    from ari.domain.tools.ari_permissions import allowed_ari_tools
+    owner = {t.name for t in await build_server(get_tools, allowed_ari_tools(True, "chat")).list_tools()}
+    user = {t.name for t in await build_server(get_tools, allowed_ari_tools(False, "chat")).list_tools()}
+    assert "ejecutar" in owner and "ejecutar" not in user
+
+
 async def test_stdio_handshake_lists_tools_without_actor_env():
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "ari.mcp_server",

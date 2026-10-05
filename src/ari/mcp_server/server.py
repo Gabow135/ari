@@ -188,4 +188,38 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         """Desconecta una casilla de correo del usuario por su etiqueta."""
         return await (await get_tools()).olvidar_correo(label)
 
+    @tool("escribir_archivo")
+    async def escribir_archivo(ruta: str, contenido: str) -> str:
+        """Crea o sobrescribe un archivo de texto en tu espacio de trabajo privado.
+        ruta es relativa, p. ej. "notas/plan.txt"."""
+        return await (await get_tools()).escribir_archivo(ruta, contenido)
+
+    @tool("leer_archivo")
+    async def leer_archivo(ruta: str) -> str:
+        """Lee un archivo de texto de tu espacio de trabajo privado."""
+        return await (await get_tools()).leer_archivo(ruta)
+
+    @tool("listar_archivos")
+    async def listar_archivos(ruta: str = ".") -> str:
+        """Lista los archivos y carpetas de tu espacio de trabajo privado."""
+        return await (await get_tools()).listar_archivos(ruta)
+
+    @tool("borrar_archivo")
+    async def borrar_archivo(ruta: str) -> str:
+        """Borra un archivo de tu espacio de trabajo privado."""
+        return await (await get_tools()).borrar_archivo(ruta)
+
+    @tool("consultar_sql")
+    async def consultar_sql(base: str, sql: str) -> str:
+        """Ejecuta UNA sentencia SQL sobre un archivo .sqlite de tu espacio de
+        trabajo (crear tablas, insertar, consultar). base es el nombre del
+        archivo, p. ej. "datos.sqlite"."""
+        return await (await get_tools()).consultar_sql(base, sql)
+
+    @tool("ejecutar")
+    async def ejecutar(comando: str) -> str:
+        """(Solo dueño) Ejecuta un comando de shell con el directorio de trabajo
+        en tu espacio privado. Devuelve código de salida, stdout y stderr."""
+        return await (await get_tools()).ejecutar(comando)
+
     return server
