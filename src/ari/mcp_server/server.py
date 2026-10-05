@@ -240,7 +240,7 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
     async def leer_correo(cuenta: str, id: str) -> str:
         """Lee un correo completo por su #id (de buscar_correos). Devuelve el
         cuerpo en texto limpio y, para correos grandes, guarda el cuerpo completo
-        y los adjuntos en tu espacio de trabajo (carpeta "correos/"); usá
+        y los adjuntos en tu espacio de trabajo (carpeta "correos/"); usa
         leer_documento sobre cada adjunto (PDF, Excel) para extraer su contenido.
         Es la forma preferida de leer correos, sobre todo los grandes."""
         return await (await get_tools()).leer_correo(cuenta, id)

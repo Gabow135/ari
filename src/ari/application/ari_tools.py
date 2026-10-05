@@ -310,11 +310,11 @@ class AriTools:
 
     def _mailbox(self, cuenta: str):
         if self._email_reader is None or not self._mailboxes:
-            return None, "No tenés casillas de correo conectadas."
+            return None, "No tienes casillas de correo conectadas."
         spec = self._mailboxes.get((cuenta or "").strip())
         if spec is None:
             names = ", ".join(sorted(self._mailboxes)) or "(ninguna)"
-            return None, f"No tenés una casilla llamada «{cuenta}». Tus casillas: {names}."
+            return None, f"No tienes una casilla llamada «{cuenta}». Tus casillas: {names}."
         return spec, None
 
     async def buscar_correos(self, cuenta: str, criterio: str = "", limite: int = 10) -> str:
@@ -372,7 +372,7 @@ class AriTools:
             log.warning("could not save email body %s", body_rel)
         saved = self._save_attachments(ws, cuenta, msg)
         if saved:
-            lines.append("📎 Adjuntos (usá leer_documento sobre cada ruta):")
+            lines.append("📎 Adjuntos (usa leer_documento sobre cada ruta):")
             lines += [f"- {path}" for path in saved]
         return await self._receipt("\n".join(lines))
 
