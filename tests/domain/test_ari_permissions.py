@@ -5,7 +5,9 @@ from ari.domain.tools.ari_permissions import (
 
 USER_CHAT = {"agendar", "listar_agenda", "cancelar", "recordar_dato", "olvidar_dato",
              "ver_datos", "compartir", "ver_permisos", "revocar_permiso",
-             "conectar_correo", "mis_correos", "olvidar_correo"}
+             "conectar_correo", "mis_correos", "olvidar_correo",
+             "escribir_archivo", "leer_archivo", "listar_archivos",
+             "borrar_archivo", "consultar_sql"}
 
 
 def test_catalogue():
@@ -16,7 +18,9 @@ def test_catalogue():
                          "ver_misiones", "cancelar_mision", "pedir_credenciales",
                          "ver_skills", "activar_skill", "desactivar_skill",
                          "compartir", "ver_permisos", "revocar_permiso",
-                         "conectar_correo", "mis_correos", "olvidar_correo")
+                         "conectar_correo", "mis_correos", "olvidar_correo",
+                         "escribir_archivo", "leer_archivo", "listar_archivos",
+                         "borrar_archivo", "consultar_sql", "ejecutar")
 
 
 def test_chat_permissions():
