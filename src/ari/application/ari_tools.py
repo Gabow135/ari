@@ -243,12 +243,12 @@ class AriTools:
         if self._ws_factory is None:
             return "El espacio de trabajo no está disponible."
         try:
-            self._ws().delete(ruta)
+            rel = self._ws().delete(ruta)
         except FileNotFoundError:
             return f"No existe el archivo: {ruta}"
         except (ValueError, OSError) as exc:
             return f"No pude borrar: {exc}"
-        return await self._receipt(f"🗑️ Borré {ruta}")
+        return await self._receipt(f"🗑️ Borré {rel}")
 
     # ---- cross-user grants ------------------------------------------------
 

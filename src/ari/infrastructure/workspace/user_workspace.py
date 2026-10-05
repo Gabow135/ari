@@ -64,13 +64,14 @@ class UserWorkspace:
         return [name + ("/" if os.path.isdir(os.path.join(path, name)) else "")
                 for name in sorted(os.listdir(path))]
 
-    def delete(self, rel: str) -> None:
+    def delete(self, rel: str) -> str:
         path = self.resolve(rel)
         if path == os.path.realpath(self._root):
             raise ValueError("cannot delete workspace root")
         if not os.path.isfile(path):
             raise FileNotFoundError(rel)
         os.remove(path)
+        return os.path.relpath(path, os.path.realpath(self._root))
 
 
 class Workspaces:
