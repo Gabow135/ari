@@ -50,6 +50,18 @@ def test_owner_is_told_not_to_run_commands_unprompted():
     assert "nunca propongas ni corras un comando por tu cuenta" in low
 
 
+def test_output_style_directive_for_all_users():
+    low = render_capabilities(is_owner=False).lower()
+    # Don't paste unrequested code/raw data; show code only when asked.
+    assert "no pidió" in low
+    assert "muestra código solo si te lo piden" in low
+
+
+def test_output_style_owner_file_clause_is_owner_only():
+    assert "abrir_archivo" in render_capabilities(is_owner=True)
+    assert "abrir_archivo" not in render_capabilities(is_owner=False)
+
+
 def test_proactivity_limitations_removed():
     text = " ".join(LIMITATIONS)
     assert "iniciativa propia" not in text and "recordatorios" not in text

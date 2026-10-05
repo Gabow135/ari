@@ -156,6 +156,15 @@ _DEGRADED_NOTE = ("Tienes conexiones configuradas pero inactivas (ver sección "
                   "proactivamente y guiar a tu creador a activarlas con /vault o "
                   "revisando la configuración. No las uses hasta que estén activas.")
 
+# How Ari should phrase replies: keep raw data and unrequested code out of the chat.
+_OUTPUT_STYLE = (
+    "No pegues en el chat código ni datos crudos (base64, volcados) que el usuario "
+    "final no pidió, sobre todo al procesar documentos o imágenes: responde con el "
+    "resultado o un resumen claro. Muestra código solo si te lo piden explícitamente.")
+_OUTPUT_STYLE_OWNER = (
+    "Si generas un archivo entero (p. ej. un HTML o un script), guárdalo en el espacio "
+    "de trabajo y ofrece abrirlo con abrir_archivo en vez de pegarlo.")
+
 
 def limitations(has_web: bool, has_mcp: bool, has_degraded: bool = False) -> list[str]:
     """What Ari can NOT do, given the tools of the current conversation."""
@@ -186,6 +195,9 @@ def render_capabilities(is_owner: bool, has_web: bool = False, has_mcp: bool = F
     for cap in _visible(is_owner):
         head = f"- /{cap.command}: " if cap.command else "- "
         lines.append(head + cap.summary + (f" Uso: {cap.usage}" if cap.usage else ""))
+    lines += ["", "## Cómo respondes", f"- {_OUTPUT_STYLE}"]
+    if is_owner:
+        lines.append(f"- {_OUTPUT_STYLE_OWNER}")
     lines += ["", "## Limitaciones actuales (no las prometas; propone cómo resolverlas)"]
     lines += [f"- {limit}" for limit in limitations(has_web, has_mcp, has_degraded)]
     return "\n".join(lines)

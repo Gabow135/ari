@@ -55,6 +55,7 @@ from ari.infrastructure.coder.verifier import CoderVerifier
 from ari.infrastructure.coder.workspace import Workspace
 from ari.infrastructure.command.shell_runner import ShellRunner
 from ari.infrastructure.gateway.bot_commands import register_commands
+from ari.infrastructure.gateway.outbound_sanitize import strip_binary_blobs
 from ari.infrastructure.gateway.progress_message import ProgressMessage
 from ari.infrastructure.gateway.telegram_adapter import (
     TelegramAdapter,
@@ -326,10 +327,10 @@ def main() -> None:
 
         # Proactivity: reminders/tasks, system notices, heartbeat.
         async def send(chat_id: str, text: str) -> None:
-            await _send_quietly(app.bot, chat_id, text)
+            await _send_quietly(app.bot, chat_id, strip_binary_blobs(text))
 
         async def send_checked(chat_id: str, text: str) -> bool:
-            return await _send_checked(app.bot, chat_id, text)
+            return await _send_checked(app.bot, chat_id, strip_binary_blobs(text))
 
         flusher = OutboxFlusher(c.turn_log, send_checked, _utcnow)
 
@@ -480,11 +481,11 @@ def main() -> None:
     )
 
     async def _reply_parts(msg, text: str) -> None:
-        for part in TelegramAdapter.split_text(text):
+        for part in TelegramAdapter.split_text(strip_binary_blobs(text)):
             await msg.reply_text(part)
 
     async def _send(chat_id: str, text: str) -> None:
-        await app.bot.send_message(chat_id=int(chat_id), text=text)
+        await app.bot.send_message(chat_id=int(chat_id), text=strip_binary_blobs(text))
 
     async def _admit(msg) -> bool:
         """Access gate: only owners and approved users get past this point."""
@@ -530,7 +531,7 @@ def main() -> None:
         confirm_command = app.bot_data["confirm_command"]
 
         async def report(reply_text: str) -> None:
-            for part in TelegramAdapter.split_text(reply_text):
+            for part in TelegramAdapter.split_text(strip_binary_blobs(reply_text)):
                 await msg.reply_text(part)
 
         async def chat(chat_text: str, uid: str) -> str:
@@ -578,7 +579,7 @@ def main() -> None:
             async with ProgressMessage(app.bot, msg.chat_id):
                 reply = await route_message(text, user_id, local_deps)
             if reply is not None:
-                for part in TelegramAdapter.split_text(reply):
+                for part in TelegramAdapter.split_text(strip_binary_blobs(reply)):
                     await msg.reply_text(part)
                 if from_voice:
                     origin = InboundContext(came_from_voice=True, chat_id=str(msg.chat_id), user_id=user_id)
