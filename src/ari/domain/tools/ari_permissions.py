@@ -13,7 +13,9 @@ ARI_TOOLS = ("agendar", "listar_agenda", "cancelar", "recordar_dato", "olvidar_d
              "buscar_correos", "leer_correo",
              "escribir_archivo", "leer_archivo", "listar_archivos",
              "borrar_archivo", "consultar_sql", "ejecutar", "leer_documento",
-             "abrir_archivo")
+             "abrir_archivo",
+             "whatsapp_pendientes", "whatsapp_responder",
+             "whatsapp_enviar", "whatsapp_filtro")
 
 _READ = {"listar_agenda", "ver_datos"}
 _USER_CHAT = _READ | {"agendar", "cancelar", "recordar_dato", "olvidar_dato",

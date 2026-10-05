@@ -90,7 +90,8 @@ class AriTools:
                  email_accounts=None, email_enroll=None,
                  workspaces=None, sql_sandbox=None, runner=None,
                  files=None, denied_roots=(),
-                 email_reader=None, mailboxes=None):
+                 email_reader=None, mailboxes=None,
+                 whatsapp=None):
         self._a, self._schedule, self._memory, self._log = actor, schedule, memory, turn_log
         self._tz, self._max, self._clock = tz, max_items, clock
         self._gate, self._access = gate, access
@@ -109,6 +110,7 @@ class AriTools:
         self._denied_roots = list(denied_roots)
         self._email_reader = email_reader   # EmailReaderPort | None
         self._mailboxes = mailboxes or {}   # dict[str, MailboxSpec]
+        self._whatsapp = whatsapp           # SqliteWhatsApp | None
 
     def _allowed(self, tool: str) -> bool:
         if tool in allowed_ari_tools(self._a.is_owner, self._a.context):
@@ -764,3 +766,74 @@ class AriTools:
         if not removed:
             return f"No encontré una casilla «{name}»."
         return await self._receipt(f"🗑️ Desconecté la casilla «{name}».")
+
+    # ---- whatsapp ---------------------------------------------------------
+
+    async def whatsapp_pendientes(self, limite: int = 10) -> str:
+        if not self._allowed("whatsapp_pendientes"):
+            return DENIED
+        if self._whatsapp is None:
+            return "WhatsApp no está conectado."
+        rows = await self._whatsapp.list_pending(int(limite or 10))
+        if not rows:
+            return "No hay WhatsApp pendientes."
+        lines = []
+        for r in rows:
+            body = r.text.strip() or f"[{r.media_kind or 'media'}]"
+            lines.append(f"#{r.id} · {r.contact_name} · {body}")
+        return "\n".join(lines)
+
+    async def whatsapp_responder(self, id: int, instruccion: str) -> str:
+        if not self._allowed("whatsapp_responder"):
+            return DENIED
+        if self._whatsapp is None:
+            return "WhatsApp no está conectado."
+        try:
+            id_int = int(id)
+        except (ValueError, TypeError):
+            return f"No encontré el WhatsApp #{id}."
+        msg = await self._whatsapp.get_inbound(id_int)
+        if msg is None:
+            return f"No encontré el WhatsApp #{id_int}."
+        draft = (instruccion or "").strip()
+        if not draft:
+            return "No pude redactar: decime qué responder."
+        did = await self._whatsapp.create_draft(id_int, msg.wa_chat_id, msg.contact_name, draft)
+        return (f"Voy a responder a {msg.contact_name}: «{draft}». "
+                f"¿Confirmo? (usá whatsapp_enviar #{did})")
+
+    async def whatsapp_enviar(self, borrador_id: int) -> str:
+        if not self._allowed("whatsapp_enviar"):
+            return DENIED
+        if self._whatsapp is None:
+            return "WhatsApp no está conectado."
+        try:
+            did = int(borrador_id)
+        except (ValueError, TypeError):
+            return "No encontré ese borrador."
+        row = await self._whatsapp.queue_draft(did)
+        if row is None:
+            return "No pude enviar: ese borrador no existe o ya se envió."
+        return await self._receipt(f"✅ Encolado para {row.contact_name}: «{row.text}»")
+
+    async def whatsapp_filtro(self, accion: str, valor: str = "") -> str:
+        if not self._allowed("whatsapp_filtro"):
+            return DENIED
+        if self._whatsapp is None:
+            return "WhatsApp no está conectado."
+        accion, valor = (accion or "").strip().lower(), (valor or "").strip()
+        ops = {
+            "agregar_contacto": self._whatsapp.add_contact,
+            "quitar_contacto": self._whatsapp.remove_contact,
+            "agregar_palabra": self._whatsapp.add_keyword,
+            "quitar_palabra": self._whatsapp.remove_keyword,
+        }
+        if accion in ops:
+            if not valor:
+                return "Falta el valor."
+            await ops[accion](valor)
+        elif accion != "ver":
+            return "Acciones: agregar_contacto, quitar_contacto, agregar_palabra, quitar_palabra, ver."
+        f = await self._whatsapp.get_filter()
+        return (f"Contactos: {', '.join(sorted(f.contacts)) or '—'}\n"
+                f"Palabras: {', '.join(sorted(f.keywords)) or '—'}")
