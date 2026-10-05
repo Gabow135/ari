@@ -1,7 +1,10 @@
 """Logic behind Ari's own MCP tools. Every method acts for the Actor given by
 Ari (never chosen by the model), checks the permission table, validates with the
 domain rules, and records a code-generated receipt for each change."""
+import asyncio
 import logging
+import os
+import re
 from dataclasses import dataclass
 
 from ari.application.access.gate import normalize_code
@@ -60,6 +63,15 @@ def _match(records, arg: str):
     return [r for r in records if r.user_id == target]
 
 
+_UNSAFE_NAME = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+def _safe_name(name: str) -> str:
+    base = os.path.basename((name or "").strip())
+    cleaned = _UNSAFE_NAME.sub("_", base)
+    return cleaned if cleaned not in ("", ".", "..") else ""
+
+
 @dataclass(frozen=True)
 class Actor:
     user_id: str
@@ -75,7 +87,8 @@ class AriTools:
                  clock, gate=None, access=None, coding=None, commands=None, missions=None,
                  credentials=None, skills=None, grants=None,
                  email_accounts=None, email_enroll=None,
-                 workspaces=None, sql_sandbox=None, runner=None):
+                 workspaces=None, sql_sandbox=None, runner=None,
+                 email_reader=None, mailboxes=None):
         self._a, self._schedule, self._memory, self._log = actor, schedule, memory, turn_log
         self._tz, self._max, self._clock = tz, max_items, clock
         self._gate, self._access = gate, access
@@ -90,6 +103,8 @@ class AriTools:
         self._ws_factory = workspaces  # Workspaces | None
         self._sql = sql_sandbox        # SqliteSandbox | None
         self._runner = runner          # ShellRunner | None
+        self._email_reader = email_reader   # EmailReaderPort | None
+        self._mailboxes = mailboxes or {}   # dict[str, MailboxSpec]
 
     def _allowed(self, tool: str) -> bool:
         if tool in allowed_ari_tools(self._a.is_owner, self._a.context):
@@ -290,6 +305,39 @@ class AriTools:
             return ("No pude leer ese documento (tipo no soportado o sin texto extraíble, "
                     "p. ej. un PDF escaneado).")
         return text
+
+    # ---- email reading ----------------------------------------------------
+
+    def _mailbox(self, cuenta: str):
+        if self._email_reader is None or not self._mailboxes:
+            return None, "No tenés casillas de correo conectadas."
+        spec = self._mailboxes.get((cuenta or "").strip())
+        if spec is None:
+            names = ", ".join(sorted(self._mailboxes)) or "(ninguna)"
+            return None, f"No tenés una casilla llamada «{cuenta}». Tus casillas: {names}."
+        return spec, None
+
+    async def buscar_correos(self, cuenta: str, criterio: str = "", limite: int = 10) -> str:
+        if not self._allowed("buscar_correos"):
+            return DENIED
+        spec, error = self._mailbox(cuenta)
+        if error:
+            return error
+        try:
+            limite = max(1, min(int(limite or 10), 25))
+        except (TypeError, ValueError):
+            limite = 10
+        try:
+            summaries = await asyncio.to_thread(
+                self._email_reader.search, spec, criterio or "", limite)
+        except Exception:
+            log.exception("buscar_correos failed for %s", cuenta)
+            return f"No pude conectarme a la casilla «{cuenta}»."
+        if not summaries:
+            return "No encontré correos con ese criterio."
+        return "\n".join(
+            f"#{s.uid} · {s.from_addr} · {s.subject} · {s.date} · {s.snippet}".rstrip(" ·")
+            for s in summaries)
 
     async def consultar_sql(self, base: str, sql: str) -> str:
         if not self._allowed("consultar_sql"):
