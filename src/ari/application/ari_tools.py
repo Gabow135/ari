@@ -19,6 +19,17 @@ log = logging.getLogger("ari.tools")
 
 DENIED = "No permitido en este contexto."
 _KINDS = {"recordatorio": REMINDER, "tarea": TASK}
+
+
+def _format_sql(result) -> str:
+    if not result.columns:
+        return f"✅ Listo ({result.rowcount} fila(s) afectada(s))."
+    header = " | ".join(result.columns)
+    lines = [header, "-" * len(header)]
+    lines += [" | ".join("" if v is None else str(v) for v in row) for row in result.rows]
+    if result.truncated:
+        lines.append(f"… (recortado a {len(result.rows)} filas)")
+    return "\n".join(lines)
 SCHEDULE = "schedule"
 _CAPS = {"recordatorios": SCHEDULE, "recordatorio": SCHEDULE,
          "tareas": SCHEDULE, "tarea": SCHEDULE, "agenda": SCHEDULE}
@@ -249,6 +260,23 @@ class AriTools:
         except (ValueError, OSError) as exc:
             return f"No pude borrar: {exc}"
         return await self._receipt(f"🗑️ Borré {rel}")
+
+    async def consultar_sql(self, base: str, sql: str) -> str:
+        if not self._allowed("consultar_sql"):
+            return DENIED
+        if self._ws_factory is None or self._sql is None:
+            return "El espacio de trabajo no está disponible."
+        ws = self._ws()
+        try:
+            db_path = ws.resolve(base)
+        except ValueError as exc:
+            return f"Ruta de base inválida: {exc}"
+        ws.ensure()  # the user root must exist before sqlite creates the file
+        try:
+            result = await self._sql.run(db_path, sql or "")
+        except Exception as exc:  # noqa: BLE001 — sqlite errors, denied stmts, timeouts
+            return f"Error de SQL: {exc}"
+        return _format_sql(result)
 
     # ---- cross-user grants ------------------------------------------------
 

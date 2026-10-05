@@ -55,3 +55,28 @@ async def test_traversal_is_refused(env):
 async def test_denied_outside_chat(env):
     out = await _tools(env, owner=True, context=TASK).escribir_archivo("a.txt", "x")
     assert out == DENIED
+
+
+# ---- SQL tests ----------------------------------------------------------------
+
+from ari.infrastructure.workspace.sqlite_sandbox import SqliteSandbox  # noqa: E402
+
+
+async def test_sql_create_insert_select(env):
+    t = _tools(env, sandbox=SqliteSandbox())
+    assert (await t.consultar_sql("datos.sqlite", "CREATE TABLE t (a INT)")).startswith("✅")
+    await t.consultar_sql("datos.sqlite", "INSERT INTO t VALUES (1),(2)")
+    out = await t.consultar_sql("datos.sqlite", "SELECT a FROM t ORDER BY a")
+    assert "a" in out and "1" in out and "2" in out
+
+
+async def test_sql_attach_is_reported_as_error(env):
+    t = _tools(env, sandbox=SqliteSandbox())
+    out = await t.consultar_sql("datos.sqlite", "ATTACH DATABASE 'x.sqlite' AS x")
+    assert out.startswith("Error de SQL")
+
+
+async def test_sql_db_path_is_jailed(env):
+    t = _tools(env, sandbox=SqliteSandbox())
+    out = await t.consultar_sql("../escape.sqlite", "CREATE TABLE t (a INT)")
+    assert out.startswith("Ruta de base inválida")
