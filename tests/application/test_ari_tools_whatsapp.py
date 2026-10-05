@@ -65,7 +65,9 @@ async def test_non_owner_denied(tools_and_store):
     tools, store = tools_and_store
     tools._a = Actor(is_owner=False)
     assert await tools.whatsapp_pendientes() == DENIED
+    assert await tools.whatsapp_responder(1, "x") == DENIED
     assert await tools.whatsapp_enviar(1) == DENIED
+    assert await tools.whatsapp_filtro("ver") == DENIED
 
 
 async def test_filtro_add_and_view(tools_and_store):
