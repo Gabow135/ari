@@ -18,7 +18,7 @@ class DocumentsSkill:
                 max_chars=self._cfg.get("max_chars", 20000),
             )
         except Exception as exc:  # corrupt/encrypted/unreadable — never crash the turn
-            ctx.log.warning("documents: extraction failed for %s: %s", att.filename or att.mime, exc)
+            ctx.log.warning("documents: extraction failed for %s: %s", att.filename or att.mime or "documento", exc)
             return None
         if not text:
             return None

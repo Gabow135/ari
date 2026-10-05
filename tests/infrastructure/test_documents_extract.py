@@ -1,9 +1,10 @@
 # tests/infrastructure/test_documents_extract.py
 """Tests for the shared document extractor.
 
-reportlab is NOT installed in this project; positive PDF text extraction
-is covered via XLSX and CSV paths. The PDF path is tested via the blank-page
-(empty → None) and the corrupt-bytes paths.
+reportlab is NOT installed in this project; positive PDF text extraction is
+covered via a hand-crafted minimal PDF bytes literal with a real text layer
+(see _PDF_WITH_TEXT).  The blank-page (empty → None) and corrupt-bytes paths
+are also covered.
 """
 import io
 
@@ -12,6 +13,38 @@ import pypdf
 import pytest
 
 from ari.infrastructure.workspace.documents import extract_document
+
+
+# ---------------------------------------------------------------------------
+# static fixtures
+# ---------------------------------------------------------------------------
+
+# Minimal valid PDF with a real text layer — hand-crafted with correct xref
+# offsets so pypdf can extract the content stream without any third-party
+# generator.  Verified against pypdf 6.x: pages[0].extract_text() == 'Total 123.45'.
+_PDF_WITH_TEXT = (
+    b"%PDF-1.4\n"
+    b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+    b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+    b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]"
+    b"/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>endobj\n"
+    b"4 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
+    b"5 0 obj<</Length 44>>stream\n"
+    b"BT /F1 24 Tf 72 700 Td (Total 123.45) Tj ET\n"
+    b"endstream endobj\n"
+    b"xref\n"
+    b"0 6\n"
+    b"0000000000 65535 f \n"
+    b"0000000009 00000 n \n"
+    b"0000000052 00000 n \n"
+    b"0000000101 00000 n \n"
+    b"0000000211 00000 n \n"
+    b"0000000272 00000 n \n"
+    b"trailer<</Size 6/Root 1 0 R>>\n"
+    b"startxref\n"
+    b"361\n"
+    b"%%EOF\n"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +139,11 @@ def test_blank_pdf_by_extension():
     data = _blank_pdf_bytes()
     text = extract_document(data, filename="doc.pdf")
     assert text is None
+
+
+def test_pdf_with_text_is_extracted():
+    out = extract_document(_PDF_WITH_TEXT, filename="factura.pdf")
+    assert out is not None and "123.45" in out
 
 
 # ---------------------------------------------------------------------------
