@@ -1,6 +1,7 @@
 """Thin neonize (whatsmeow) adapter. All logic lives in `inbound_from_event`;
 the client calls themselves are validated manually during real pairing."""
 import logging
+import os
 
 from ari.domain.whatsapp.entities import InboundWhatsApp
 
@@ -44,7 +45,6 @@ class NeonizeWhatsApp:
     async def start(self, on_message) -> None:
         from neonize.aioze.client import NewAClient
         from neonize.aioze.events import ConnectedEv, MessageEv
-        import os
         os.makedirs(self._session_dir, exist_ok=True)
         db = os.path.join(self._session_dir, "session.db")
         self._client = NewAClient(db)
