@@ -80,3 +80,26 @@ async def test_sql_db_path_is_jailed(env):
     t = _tools(env, sandbox=SqliteSandbox())
     out = await t.consultar_sql("../escape.sqlite", "CREATE TABLE t (a INT)")
     assert out.startswith("Ruta de base inválida")
+
+
+# ---- ejecutar tests -----------------------------------------------------------
+
+from ari.infrastructure.command.shell_runner import ShellRunner  # noqa: E402
+
+
+async def test_ejecutar_runs_in_workspace_cwd(env):
+    conn, workspaces, _ = env
+    t = _tools(env, runner=ShellRunner(timeout=30.0))
+    out = await t.ejecutar("python -c \"import os;print(os.getcwd())\"")
+    assert workspaces.for_user("42").root in out
+
+
+async def test_ejecutar_denied_for_non_owner(env):
+    t = _tools(env, owner=False, runner=ShellRunner(timeout=30.0))
+    assert await t.ejecutar("echo hola") == DENIED
+
+
+async def test_ejecutar_reports_timeout(env):
+    t = _tools(env, runner=ShellRunner(timeout=0.2))
+    out = await t.ejecutar("python -c \"import time;time.sleep(5)\"")
+    assert "tiempo límite" in out

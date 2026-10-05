@@ -32,6 +32,13 @@ def _format_sql(result) -> str:
     return "\n".join(lines)
 
 
+def _cap(text: str, limit: int) -> str:
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n… (recortado, {len(text) - limit} caracteres más)"
+
+
 SCHEDULE = "schedule"
 _CAPS = {"recordatorios": SCHEDULE, "recordatorio": SCHEDULE,
          "tareas": SCHEDULE, "tarea": SCHEDULE, "agenda": SCHEDULE}
@@ -279,6 +286,26 @@ class AriTools:
         except Exception as exc:  # noqa: BLE001 — sqlite errors, denied stmts, timeouts
             return f"Error de SQL: {exc}"
         return _format_sql(result)
+
+    async def ejecutar(self, comando: str) -> str:
+        if not self._allowed("ejecutar"):
+            return DENIED
+        if self._ws_factory is None or self._runner is None:
+            return "El espacio de trabajo no está disponible."
+        comando = (comando or "").strip()
+        if not comando:
+            return "No me pasaste ningún comando."
+        cwd = self._ws().ensure()
+        result = await self._runner(comando, cwd)
+        if result.timed_out:
+            return "⏱️ El comando excedió el tiempo límite y lo corté."
+        parts = [f"(código {result.returncode})"]
+        out, err = _cap(result.stdout, 65536), _cap(result.stderr, 65536)
+        if out:
+            parts.append(f"stdout:\n{out}")
+        if err:
+            parts.append(f"stderr:\n{err}")
+        return await self._receipt("\n".join(parts))
 
     # ---- cross-user grants ------------------------------------------------
 
