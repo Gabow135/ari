@@ -62,12 +62,12 @@ async def test_buscar_lists_results(env):
 
 async def test_buscar_unknown_account(env):
     out = await _tools(env, reader=FakeReader()).buscar_correos("gmail")
-    assert "no tenés una casilla" in out.lower()
+    assert "no tienes una casilla" in out.lower()
 
 
 async def test_buscar_no_mailboxes(env):
     out = await _tools(env, reader=FakeReader(), mailboxes={}).buscar_correos("x")
-    assert "no tenés casillas" in out.lower()
+    assert "no tienes casillas" in out.lower()
 
 
 async def test_buscar_connection_error_is_friendly(env):
