@@ -84,7 +84,6 @@ class SqliteWhatsApp:
             "UPDATE whatsapp_messages SET status='queued' WHERE id=? AND status='draft'",
             (draft_id,),
         )
-        await self._c.commit()
         if cur.rowcount == 0:
             return None
         row = await self._row(draft_id)
@@ -93,11 +92,12 @@ class SqliteWhatsApp:
                 "UPDATE whatsapp_messages SET status='answered' WHERE id=? AND direction='in'",
                 (row.inbound_id,),
             )
-            await self._c.commit()
+        await self._c.commit()
         return row
 
     async def claim_queued(self) -> Row | None:
         # Step 1: find the candidate id
+        # single-connection assumption: aiosqlite serializes coroutines on one conn
         cur = await self._c.execute(
             "SELECT id FROM whatsapp_messages WHERE direction='out' AND status='queued' "
             "ORDER BY id LIMIT 1"
@@ -170,4 +170,6 @@ class SqliteWhatsApp:
             (id,),
         )
         r = await cur.fetchone()
+        if r is None:
+            raise AssertionError(f"_row: no row for id={id}")
         return Row(r[0], r[1], r[2], r[3], r[4], r[5], r[6])
