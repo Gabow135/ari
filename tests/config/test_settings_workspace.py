@@ -2,6 +2,7 @@ from ari.config.settings import Settings
 
 
 def test_workspaces_dir_default(monkeypatch):
+    monkeypatch.delenv("ARI_WORKSPACES_DIR", raising=False)
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
     assert Settings().workspaces_dir == "~/.ari/workspaces"
 

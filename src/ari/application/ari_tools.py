@@ -251,7 +251,7 @@ class AriTools:
             return "El espacio de trabajo no está disponible."
         try:
             items = self._ws().list(ruta)
-        except (FileNotFoundError, NotADirectoryError):
+        except NotADirectoryError:
             return f"No existe la carpeta: {ruta}"
         except (ValueError, OSError) as exc:
             return f"No pude listar: {exc}"
