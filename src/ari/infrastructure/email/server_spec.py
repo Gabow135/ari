@@ -80,7 +80,7 @@ def mailboxes_from_json(text: str) -> dict[str, MailboxSpec]:
         try:
             out[d["cuenta"]] = MailboxSpec(
                 cuenta=d["cuenta"], imap_host=d["imap_host"],
-                imap_port=int(d["imap_port"]), imap_secure=bool(d["imap_secure"]),
+                imap_port=int(d["imap_port"]), imap_secure=_truthy(d["imap_secure"]),
                 user=d["user"], password=d.get("password", ""))
         except (KeyError, TypeError, ValueError):
             continue

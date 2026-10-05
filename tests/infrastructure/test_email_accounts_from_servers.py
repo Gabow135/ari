@@ -42,3 +42,8 @@ def test_json_roundtrip():
 def test_from_json_tolerates_garbage():
     assert mailboxes_from_json("not json") == {}
     assert mailboxes_from_json("") == {}
+
+
+def test_from_json_non_list_returns_empty():
+    assert mailboxes_from_json("42") == {}
+    assert mailboxes_from_json("{}") == {}
