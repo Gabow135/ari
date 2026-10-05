@@ -222,4 +222,10 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         en tu espacio privado. Devuelve código de salida, stdout y stderr."""
         return await (await get_tools()).ejecutar(comando)
 
+    @tool("leer_documento")
+    async def leer_documento(ruta: str) -> str:
+        """Lee y extrae el texto de un documento de tu espacio de trabajo
+        (PDF, Excel .xlsx, CSV o .txt). ruta es relativa, p. ej. "facturas/sweetcoffee.pdf"."""
+        return await (await get_tools()).leer_documento(ruta)
+
     return server

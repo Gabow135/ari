@@ -48,3 +48,33 @@ def test_user_ids_are_sanitized_and_isolated(tmp_path):
     assert a.root.startswith(base + os.sep)
     assert os.path.dirname(a.root) == base  # one segment only, no traversal
     assert a.root != b.root
+
+
+# ---------------------------------------------------------------------------
+# read_bytes
+# ---------------------------------------------------------------------------
+
+def test_read_bytes_roundtrip(tmp_path):
+    ws = UserWorkspace(str(tmp_path), "42")
+    ws.write_text("docs/report.txt", "hello bytes")
+    data = ws.read_bytes("docs/report.txt")
+    assert data == b"hello bytes"
+
+
+def test_read_bytes_rejects_traversal(tmp_path):
+    ws = UserWorkspace(str(tmp_path), "42")
+    with pytest.raises(ValueError):
+        ws.read_bytes("../escape.bin")
+
+
+def test_read_bytes_missing_file_raises(tmp_path):
+    ws = UserWorkspace(str(tmp_path), "42")
+    with pytest.raises(FileNotFoundError):
+        ws.read_bytes("nonexistent.pdf")
+
+
+def test_read_bytes_size_cap(tmp_path):
+    ws = UserWorkspace(str(tmp_path), "42")
+    ws.write_text("big.txt", "A" * 100)
+    with pytest.raises(ValueError, match="too large"):
+        ws.read_bytes("big.txt", max_bytes=10)

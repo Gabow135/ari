@@ -57,6 +57,15 @@ class UserWorkspace:
         with open(path, encoding="utf-8", errors="replace") as f:
             return f.read()
 
+    def read_bytes(self, rel: str, *, max_bytes: int = 10_485_760) -> bytes:
+        path = self.resolve(rel)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(rel)
+        if os.path.getsize(path) > max_bytes:
+            raise ValueError("file too large to read")
+        with open(path, "rb") as f:
+            return f.read()
+
     def list(self, rel: str = ".") -> list[str]:
         path = self.resolve(rel)
         if not os.path.isdir(path):

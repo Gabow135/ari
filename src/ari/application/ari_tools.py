@@ -14,6 +14,7 @@ from ari.domain.memory.fact_keys import normalize_key
 from ari.domain.schedule.actions import ActionError, next_cron_run, parse_action
 from ari.domain.schedule.entities import ACTIVE, CANCELLED, PAUSED, REMINDER, RUNNING, TASK
 from ari.domain.tools.ari_permissions import allowed_ari_tools
+from ari.infrastructure.workspace.documents import extract_document
 
 log = logging.getLogger("ari.tools")
 
@@ -269,6 +270,26 @@ class AriTools:
         except (ValueError, OSError) as exc:
             return f"No pude borrar: {exc}"
         return await self._receipt(f"🗑️ Borré {rel}")
+
+    async def leer_documento(self, ruta: str) -> str:
+        if not self._allowed("leer_documento"):
+            return DENIED
+        if self._ws_factory is None:
+            return "El espacio de trabajo no está disponible."
+        try:
+            data = self._ws().read_bytes(ruta)
+        except FileNotFoundError:
+            return f"No existe el archivo: {ruta}"
+        except (ValueError, OSError) as exc:
+            return f"No pude leer el archivo: {exc}"
+        try:
+            text = extract_document(data, filename=ruta)
+        except Exception as exc:  # noqa: BLE001 — corrupt/encrypted document
+            return f"No pude extraer el documento: {exc}"
+        if not text:
+            return ("No pude leer ese documento (tipo no soportado o sin texto extraíble, "
+                    "p. ej. un PDF escaneado).")
+        return text
 
     async def consultar_sql(self, base: str, sql: str) -> str:
         if not self._allowed("consultar_sql"):

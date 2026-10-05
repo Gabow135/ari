@@ -7,7 +7,7 @@ USER_CHAT = {"agendar", "listar_agenda", "cancelar", "recordar_dato", "olvidar_d
              "ver_datos", "compartir", "ver_permisos", "revocar_permiso",
              "conectar_correo", "mis_correos", "olvidar_correo",
              "escribir_archivo", "leer_archivo", "listar_archivos",
-             "borrar_archivo", "consultar_sql"}
+             "borrar_archivo", "consultar_sql", "leer_documento"}
 
 
 def test_catalogue():
@@ -20,7 +20,7 @@ def test_catalogue():
                          "compartir", "ver_permisos", "revocar_permiso",
                          "conectar_correo", "mis_correos", "olvidar_correo",
                          "escribir_archivo", "leer_archivo", "listar_archivos",
-                         "borrar_archivo", "consultar_sql", "ejecutar")
+                         "borrar_archivo", "consultar_sql", "ejecutar", "leer_documento")
 
 
 def test_chat_permissions():

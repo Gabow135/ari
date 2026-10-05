@@ -103,3 +103,37 @@ async def test_ejecutar_reports_timeout(env):
     t = _tools(env, runner=ShellRunner(timeout=0.2))
     out = await t.ejecutar("python -c \"import time;time.sleep(5)\"")
     assert "tiempo límite" in out
+
+
+# ---- leer_documento tests ----------------------------------------------------
+
+async def test_leer_documento_reads_csv(env):
+    t = _tools(env)
+    await t.escribir_archivo("datos.csv", "a,b\n1,2")
+    out = await t.leer_documento("datos.csv")
+    assert "a,b" in out
+    assert "1,2" in out
+
+
+async def test_leer_documento_unsupported_returns_friendly(env, tmp_path):
+    """A .bin file has no extractable text → friendly 'no soportado' message."""
+    t = _tools(env)
+    # Write raw bytes through the workspace directly (binary is not text-writable via
+    # escribir_archivo, so put it in place via write_text with some ASCII bytes).
+    ws = _tools(env)
+    # Use write_text to create a file with a .bin-like extension but ASCII content
+    await t.escribir_archivo("data.bin", "\x00unsupported")
+    out = await t.leer_documento("data.bin")
+    assert "no soportado" in out.lower() or "sin texto" in out.lower() or "No pude" in out
+
+
+async def test_leer_documento_traversal_returns_friendly(env):
+    t = _tools(env)
+    out = await t.leer_documento("../escape.txt")
+    assert out.startswith("No pude leer") or "escapes" in out or "No existe" in out
+
+
+async def test_leer_documento_denied_in_task(env):
+    t = _tools(env, context=TASK)
+    out = await t.leer_documento("datos.csv")
+    assert out == DENIED
