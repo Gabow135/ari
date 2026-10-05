@@ -253,4 +253,28 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         Es la forma preferida de leer correos, sobre todo los grandes."""
         return await (await get_tools()).leer_correo(cuenta, id)
 
+    @tool("whatsapp_pendientes")
+    async def whatsapp_pendientes(limite: int = 10) -> str:
+        """Muestra los WhatsApp que llegaron y están sin responder."""
+        return await (await get_tools()).whatsapp_pendientes(limite)
+
+    @tool("whatsapp_responder")
+    async def whatsapp_responder(id: int, instruccion: str) -> str:
+        """Redacta una respuesta para el WhatsApp #id a partir de tu instrucción.
+        NO envía: deja un borrador y te pide confirmación. Solo envía con
+        whatsapp_enviar después de que el usuario confirme explícitamente."""
+        return await (await get_tools()).whatsapp_responder(id, instruccion)
+
+    @tool("whatsapp_enviar")
+    async def whatsapp_enviar(borrador_id: int) -> str:
+        """Envía por WhatsApp un borrador ya confirmado por el usuario.
+        Usalo SOLO cuando el usuario haya dicho que sí al borrador."""
+        return await (await get_tools()).whatsapp_enviar(borrador_id)
+
+    @tool("whatsapp_filtro")
+    async def whatsapp_filtro(accion: str, valor: str = "") -> str:
+        """Gestiona a quién/qué avisarte: agregar_contacto, quitar_contacto,
+        agregar_palabra, quitar_palabra, ver."""
+        return await (await get_tools()).whatsapp_filtro(accion, valor)
+
     return server

@@ -194,3 +194,50 @@ async def test_email_reading_tools_are_registered_and_delegate():
     result_leer = await server.call_tool("leer_correo", {"cuenta": "corp", "id": "42"})
     assert result_leer.content[0].text == "ok-leer"
     assert calls["leer"] == ("corp", "42")
+
+
+async def test_whatsapp_tools_are_registered_and_delegate():
+    """whatsapp_pendientes/responder/enviar/filtro are exposed by build_server and delegate to AriTools."""
+    calls: dict[str, object] = {}
+
+    class FakeTools:
+        async def whatsapp_pendientes(self, limite: int = 10) -> str:
+            calls["pendientes"] = (limite,)
+            return "ok-pendientes"
+
+        async def whatsapp_responder(self, id: int, instruccion: str) -> str:
+            calls["responder"] = (id, instruccion)
+            return "ok-responder"
+
+        async def whatsapp_enviar(self, borrador_id: int) -> str:
+            calls["enviar"] = (borrador_id,)
+            return "ok-enviar"
+
+        async def whatsapp_filtro(self, accion: str, valor: str = "") -> str:
+            calls["filtro"] = (accion, valor)
+            return "ok-filtro"
+
+    fake = FakeTools()
+
+    async def get_tools():
+        return fake
+
+    server = build_server(get_tools)
+    names = {t.name for t in await server.list_tools()}
+    assert {"whatsapp_pendientes", "whatsapp_responder", "whatsapp_enviar", "whatsapp_filtro"} <= names
+
+    result = await server.call_tool("whatsapp_pendientes", {"limite": 5})
+    assert result.content[0].text == "ok-pendientes"
+    assert calls["pendientes"] == (5,)
+
+    result = await server.call_tool("whatsapp_responder", {"id": 7, "instruccion": "di hola"})
+    assert result.content[0].text == "ok-responder"
+    assert calls["responder"] == (7, "di hola")
+
+    result = await server.call_tool("whatsapp_enviar", {"borrador_id": 3})
+    assert result.content[0].text == "ok-enviar"
+    assert calls["enviar"] == (3,)
+
+    result = await server.call_tool("whatsapp_filtro", {"accion": "ver", "valor": ""})
+    assert result.content[0].text == "ok-filtro"
+    assert calls["filtro"] == ("ver", "")

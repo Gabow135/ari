@@ -33,6 +33,7 @@ async def _get_tools() -> AriTools:
         from ari.infrastructure.persistence.sqlite_email_enroll_requests import (
             SqliteEmailEnrollRequests,
         )
+        from ari.infrastructure.persistence.sqlite_whatsapp import SqliteWhatsApp
         from ari.infrastructure.workspace.sqlite_sandbox import SqliteSandbox
         from ari.infrastructure.workspace.user_workspace import Workspaces
         env = os.environ
@@ -77,7 +78,8 @@ async def _get_tools() -> AriTools:
             runner=ShellRunner(timeout=60.0),
             files=SqliteFileRequests(conn),
             denied_roots=denied_roots,
-            email_reader=email_reader, mailboxes=mailboxes)
+            email_reader=email_reader, mailboxes=mailboxes,
+            whatsapp=SqliteWhatsApp(conn))
     return _tools
 
 
