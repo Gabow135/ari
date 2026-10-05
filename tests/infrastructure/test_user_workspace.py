@@ -78,3 +78,27 @@ def test_read_bytes_size_cap(tmp_path):
     ws.write_text("big.txt", "A" * 100)
     with pytest.raises(ValueError, match="too large"):
         ws.read_bytes("big.txt", max_bytes=10)
+
+
+def test_write_bytes_roundtrip(tmp_path):
+    from ari.infrastructure.workspace.user_workspace import UserWorkspace
+    ws = UserWorkspace(str(tmp_path), "u1")
+    rel = ws.write_bytes("correos/adjuntos/a/factura.pdf", b"%PDF-1.4 bytes")
+    assert rel == "correos/adjuntos/a/factura.pdf"
+    assert ws.read_bytes(rel) == b"%PDF-1.4 bytes"
+
+
+def test_write_bytes_rejects_oversize(tmp_path):
+    import pytest
+    from ari.infrastructure.workspace.user_workspace import UserWorkspace
+    ws = UserWorkspace(str(tmp_path), "u1")
+    with pytest.raises(ValueError):
+        ws.write_bytes("big.bin", b"x" * 11, max_bytes=10)
+
+
+def test_write_bytes_refuses_escape(tmp_path):
+    import pytest
+    from ari.infrastructure.workspace.user_workspace import UserWorkspace
+    ws = UserWorkspace(str(tmp_path), "u1")
+    with pytest.raises(ValueError):
+        ws.write_bytes("../escape.bin", b"x")

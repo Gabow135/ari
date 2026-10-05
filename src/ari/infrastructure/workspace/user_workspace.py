@@ -66,6 +66,18 @@ class UserWorkspace:
         with open(path, "rb") as f:
             return f.read()
 
+    def write_bytes(
+        self, rel: str, data: bytes, *, max_bytes: int = 10_485_760
+    ) -> str:
+        if len(data) > max_bytes:
+            raise ValueError(f"content too large (> {max_bytes} bytes)")
+        self.ensure()
+        path = self.resolve(rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(data)
+        return os.path.relpath(path, os.path.realpath(self._root))
+
     def list(self, rel: str = ".") -> list[str]:
         path = self.resolve(rel)
         if not os.path.isdir(path):
