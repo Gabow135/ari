@@ -228,4 +228,21 @@ def build_server(get_tools: Callable[[], Awaitable[AriTools]],
         (PDF, Excel .xlsx, CSV o .txt). ruta es relativa, p. ej. "facturas/sweetcoffee.pdf"."""
         return await (await get_tools()).leer_documento(ruta)
 
+    @tool("buscar_correos")
+    async def buscar_correos(cuenta: str, criterio: str = "", limite: int = 10) -> str:
+        """Busca correos en una de tus casillas conectadas y devuelve una lista
+        corta (#id, remitente, asunto, fecha). cuenta es el nombre que aparece en
+        «Tus herramientas» (p. ej. "email_corp"). criterio: texto libre, o
+        "de:correo@dominio", "asunto:palabra", "desde:AAAA-MM-DD", "no leidos"."""
+        return await (await get_tools()).buscar_correos(cuenta, criterio, limite)
+
+    @tool("leer_correo")
+    async def leer_correo(cuenta: str, id: str) -> str:
+        """Lee un correo completo por su #id (de buscar_correos). Devuelve el
+        cuerpo en texto limpio y, para correos grandes, guarda el cuerpo completo
+        y los adjuntos en tu espacio de trabajo (carpeta "correos/"); usá
+        leer_documento sobre cada adjunto (PDF, Excel) para extraer su contenido.
+        Es la forma preferida de leer correos, sobre todo los grandes."""
+        return await (await get_tools()).leer_correo(cuenta, id)
+
     return server
