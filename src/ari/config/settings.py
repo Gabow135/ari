@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     prune_floor: float = 0.15
     prune_min_age_days: int = 7
     consolidate_interval_hours: int = 6
+    # WhatsApp (personal, opt-in; unofficial multi-device via neonize)
+    whatsapp_enabled: bool = False
+    whatsapp_number: str = ""            # for phone pairing code (no +, with country code)
+    whatsapp_session_dir: str = "~/.ari/whatsapp"
+    whatsapp_send_min_delay_seconds: int = 3
 
     @property
     def owner_id_set(self) -> set[str]:

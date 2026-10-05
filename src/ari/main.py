@@ -334,6 +334,26 @@ def main() -> None:
 
         flusher = OutboxFlusher(c.turn_log, send_checked, _utcnow)
 
+        wa_outbox = None
+        if settings.whatsapp_enabled:
+            from ari.application.whatsapp.ingest import WhatsAppIngest
+            from ari.application.whatsapp.outbox import WhatsAppOutbox
+            from ari.infrastructure.persistence.sqlite_whatsapp import SqliteWhatsApp
+            from ari.infrastructure.whatsapp.neonize_adapter import NeonizeWhatsApp
+
+            wa_store = SqliteWhatsApp(c.conn)
+            wa_port = NeonizeWhatsApp(os.path.expanduser(settings.whatsapp_session_dir))
+            owners = sorted(settings.owner_id_set)
+            ingest = WhatsAppIngest(wa_store, send, owners)
+            await wa_port.start(ingest)
+            if wa_port.connection_state() != "connected" and settings.whatsapp_number:
+                code = await wa_port.pair_phone(settings.whatsapp_number)
+                for o in owners:
+                    await send(o, f"Vinculá Ari a WhatsApp: Dispositivos vinculados → "
+                                  f"Vincular con número → ingresá: {code}")
+            wa_outbox = WhatsAppOutbox(wa_store, wa_port, send, owners,
+                                       min_delay=settings.whatsapp_send_min_delay_seconds)
+
         def spawn(coro) -> None:
             task = asyncio.ensure_future(coro)
             _background_tasks.add(task)
@@ -444,9 +464,12 @@ def main() -> None:
             prune_min_age_days=settings.prune_min_age_days,
         )
 
-        scheduler = Scheduler([due, notices.tick, heartbeat, flusher, coding_runner,
-                               command_runner, mission_runner, credential_runner, file_runner,
-                               enroll_runner, vault_web_sweep, consolidator])
+        scheduler_ticks = [due, notices.tick, heartbeat, flusher, coding_runner,
+                           command_runner, mission_runner, credential_runner, file_runner,
+                           enroll_runner, vault_web_sweep, consolidator]
+        if wa_outbox is not None:
+            scheduler_ticks.append(wa_outbox)
+        scheduler = Scheduler(scheduler_ticks)
         scheduler.start()
         app.bot_data["scheduler"] = scheduler
 
