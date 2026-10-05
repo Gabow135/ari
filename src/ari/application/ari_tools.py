@@ -30,6 +30,8 @@ def _format_sql(result) -> str:
     if result.truncated:
         lines.append(f"… (recortado a {len(result.rows)} filas)")
     return "\n".join(lines)
+
+
 SCHEDULE = "schedule"
 _CAPS = {"recordatorios": SCHEDULE, "recordatorio": SCHEDULE,
          "tareas": SCHEDULE, "tarea": SCHEDULE, "agenda": SCHEDULE}
