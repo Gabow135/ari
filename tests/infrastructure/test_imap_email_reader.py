@@ -47,6 +47,33 @@ def test_search_returns_newest_first_and_decodes_headers():
     assert conn.logged_out is True
 
 
+class RecordingConn(FakeConn):
+    def __init__(self):
+        super().__init__()
+        self.search_args = None
+    def uid(self, command, *args):
+        if command == "SEARCH":
+            self.search_args = args
+            return "OK", [b"1"]
+        return super().uid(command, *args)
+
+
+def test_search_ascii_criteria_uses_plain_path():
+    conn = RecordingConn()
+    ImapEmailReader(ssl_factory=lambda *a, **k: conn).search(SPEC, "de:a@b.com", 10)
+    assert conn.search_args[0] is None  # no CHARSET for ASCII terms
+    assert conn.search_args[1:] == ("FROM", '"a@b.com"')
+
+
+def test_search_non_ascii_criteria_uses_utf8_charset_and_byte_literal():
+    conn = RecordingConn()
+    ImapEmailReader(ssl_factory=lambda *a, **k: conn).search(SPEC, "asunto:cotización", 10)
+    args = conn.search_args
+    assert args[0] == "CHARSET" and args[1] == "UTF-8"
+    assert "SUBJECT" in args  # ASCII keyword stays an atom
+    assert b'"cotizaci\xc3\xb3n"' in args  # accented value sent as a UTF-8 byte literal
+
+
 def test_search_closes_connection_on_login_failure():
     import imaplib
 
@@ -64,8 +91,7 @@ def test_search_closes_connection_on_login_failure():
 
     conn = LoginFailConn()
     reader = ImapEmailReader(ssl_factory=lambda *a, **k: conn)
-    import pytest
-    with pytest.raises(Exception):
+    with pytest.raises(imaplib.IMAP4.error):
         reader.search(SPEC, "", 5)
     assert conn.logged_out is True
 

@@ -112,7 +112,14 @@ class ImapEmailReader:
         conn = self._connect(spec)
         try:
             conn.select("INBOX", readonly=True)
-            _typ, data = conn.uid("SEARCH", None, *_imap_criteria(criteria))
+            crit = _imap_criteria(criteria)
+            if all(token.isascii() for token in crit):
+                _typ, data = conn.uid("SEARCH", None, *crit)
+            else:
+                # Non-ASCII terms require CHARSET UTF-8; send the accented tokens
+                # as UTF-8 byte literals while keeping ASCII keywords as atoms.
+                encoded = [t if t.isascii() else t.encode("utf-8") for t in crit]
+                _typ, data = conn.uid("SEARCH", "CHARSET", "UTF-8", *encoded)
             uids = data[0].split() if data and data[0] else []
             uids = uids[-limit:][::-1]  # newest UID first
             return [self._summary(conn, uid) for uid in uids]
