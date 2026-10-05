@@ -108,6 +108,23 @@ CREATE TABLE IF NOT EXISTS email_enroll_requests (
   id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, chat_id TEXT NOT NULL,
   status TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_email_enroll_status ON email_enroll_requests(status, id);
+
+CREATE TABLE IF NOT EXISTS whatsapp_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inbound_id INTEGER,                      -- for drafts/outbound: the inbound replied to
+    wa_chat_id TEXT NOT NULL,
+    contact_name TEXT NOT NULL DEFAULT '',
+    direction TEXT NOT NULL,                 -- 'in' | 'out'
+    text TEXT NOT NULL DEFAULT '',
+    media_kind TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,                     -- in: pending|notified|answered ; out: draft|queued|sending|sent|failed
+    ts TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS whatsapp_filter (
+    kind TEXT NOT NULL,                       -- 'contact' | 'keyword'
+    value TEXT NOT NULL,
+    PRIMARY KEY (kind, value)
+);
 """
 
 
