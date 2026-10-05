@@ -3,7 +3,8 @@ import email
 import imaplib
 from email.header import decode_header, make_header
 
-from ari.domain.email.entities import EmailSummary, MailboxSpec
+from ari.domain.email.entities import EmailAttachment, EmailSummary, FetchedEmail, MailboxSpec
+from ari.infrastructure.email.html_text import html_to_text
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -53,6 +54,36 @@ def _logout(conn) -> None:
         pass
 
 
+def _part_text(part) -> str:
+    payload = part.get_payload(decode=True) or b""
+    charset = part.get_content_charset() or "utf-8"
+    try:
+        return payload.decode(charset, "replace")
+    except LookupError:
+        return payload.decode("utf-8", "replace")
+
+
+def _parse_parts(msg) -> tuple[str, list[EmailAttachment]]:
+    body_plain, body_html, attachments = "", "", []
+    parts = msg.walk() if msg.is_multipart() else [msg]
+    for part in parts:
+        if part.is_multipart():
+            continue
+        disposition = (part.get("Content-Disposition") or "").lower()
+        filename = part.get_filename()
+        ctype = part.get_content_type()
+        if filename or "attachment" in disposition:
+            attachments.append(EmailAttachment(
+                _decode(filename) or "adjunto", ctype,
+                part.get_payload(decode=True) or b""))
+        elif ctype == "text/plain" and not body_plain:
+            body_plain = _part_text(part)
+        elif ctype == "text/html" and not body_html:
+            body_html = _part_text(part)
+    body = body_plain or html_to_text(body_html)
+    return body.strip(), attachments
+
+
 class ImapEmailReader:
     def __init__(self, *, timeout: float = 20.0,
                  ssl_factory=imaplib.IMAP4_SSL, plain_factory=imaplib.IMAP4):
@@ -97,3 +128,21 @@ class ImapEmailReader:
             uid=uid.decode(), from_addr=_decode(msg.get("From")),
             subject=_decode(msg.get("Subject")), date=_decode(msg.get("Date")),
             snippet="")
+
+    def fetch(self, spec: MailboxSpec, uid: str) -> FetchedEmail:
+        conn = self._connect(spec)
+        try:
+            conn.select("INBOX", readonly=True)
+            _typ, data = conn.uid("FETCH", uid.encode(), "(RFC822)")
+            if not data or not data[0] or not isinstance(data[0], tuple):
+                raise LookupError(uid)
+            msg = email.message_from_bytes(data[0][1])
+            body, attachments = _parse_parts(msg)
+            return FetchedEmail(
+                uid=uid, from_addr=_decode(msg.get("From")),
+                to_addr=_decode(msg.get("To")),
+                subject=_decode(msg.get("Subject")),
+                date=_decode(msg.get("Date")), body_text=body,
+                attachments=tuple(attachments))
+        finally:
+            _logout(conn)
