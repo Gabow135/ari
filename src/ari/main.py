@@ -342,6 +342,7 @@ def main() -> None:
             from ari.infrastructure.whatsapp.neonize_adapter import NeonizeWhatsApp
 
             wa_store = SqliteWhatsApp(c.conn)
+            await wa_store.reset_sending()
             wa_port = NeonizeWhatsApp(os.path.expanduser(settings.whatsapp_session_dir))
             owners = sorted(settings.owner_id_set)
             ingest = WhatsAppIngest(wa_store, send, owners)

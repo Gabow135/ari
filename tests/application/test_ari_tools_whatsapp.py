@@ -75,3 +75,12 @@ async def test_filtro_add_and_view(tools_and_store):
     await tools.whatsapp_filtro("agregar_contacto", "Juan")
     out = await tools.whatsapp_filtro("ver")
     assert "Juan" in out
+
+
+async def test_responder_refuses_group_chat(tools_and_store):
+    tools, store = tools_and_store
+    rid = await store.record_inbound(InboundWhatsApp("12345@g.us", "Grupo", "hey all"))
+    out = await tools.whatsapp_responder(rid, "hola")
+    assert "grupo" in out.lower()
+    # No draft was queued — nothing to send
+    assert await store.claim_queued() is None

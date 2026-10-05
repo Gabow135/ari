@@ -53,6 +53,26 @@ async def test_filter_roundtrip(store):
     assert "Juan" not in (await store.get_filter()).contacts
 
 
+async def test_reset_sending_requeues_stuck_rows(store):
+    """reset_sending must re-queue any row orphaned in 'sending' by a crash."""
+    rid = await store.record_inbound(InboundWhatsApp("x@s.whatsapp.net", "Ana", "hi", "", False))
+    did = await store.create_draft(rid, "x@s.whatsapp.net", "Ana", "reply")
+    await store.queue_draft(did)
+    # Simulate a crash: claim the row (now 'sending') but never mark it sent/failed.
+    claimed = await store.claim_queued()
+    assert claimed is not None
+    assert claimed.id == did
+    # Queue is now empty — the row is stuck in 'sending'.
+    assert await store.claim_queued() is None
+    # reset_sending re-queues it.
+    recovered = await store.reset_sending()
+    assert recovered == 1
+    # The row is claimable again.
+    reclaimed = await store.claim_queued()
+    assert reclaimed is not None
+    assert reclaimed.id == did
+
+
 async def test_claim_queued_deterministic_with_stale_sending_row(store):
     """A pre-existing 'sending' row must not be returned; only the newly queued row wins."""
     # Insert a stale 'sending' row directly (simulates a crashed send)

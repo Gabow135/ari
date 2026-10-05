@@ -795,6 +795,8 @@ class AriTools:
         msg = await self._whatsapp.get_inbound(id_int)
         if msg is None:
             return f"No encontré el WhatsApp #{id_int}."
+        if not msg.wa_chat_id.endswith("@s.whatsapp.net"):
+            return "Todavía no puedo responder a grupos, solo chats individuales."
         draft = (instruccion or "").strip()
         if not draft:
             return "No pude redactar: decime qué responder."

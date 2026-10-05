@@ -132,6 +132,18 @@ class SqliteWhatsApp:
         )
         await self._c.commit()
 
+    async def reset_sending(self) -> int:
+        """Re-queue outbound rows stuck in 'sending' (e.g. after a crash).
+
+        Returns the number of rows recovered.
+        """
+        cur = await self._c.execute(
+            "UPDATE whatsapp_messages SET status='queued' "
+            "WHERE direction='out' AND status='sending'"
+        )
+        await self._c.commit()
+        return cur.rowcount
+
     async def get_filter(self) -> WhatsAppFilter:
         cur = await self._c.execute("SELECT kind, value FROM whatsapp_filter")
         contacts, keywords = set(), set()
