@@ -537,7 +537,7 @@ import email
 import imaplib
 from email.header import decode_header, make_header
 
-from ari.domain.email.entities import EmailSummary, FetchedEmail, MailboxSpec
+from ari.domain.email.entities import EmailSummary, MailboxSpec
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -725,10 +725,12 @@ Expected: FAIL (`fetch` / `_parse_parts` not defined).
 
 In `src/ari/infrastructure/email/imap_email_reader.py`, add the import and helpers, and the `fetch` method.
 
-Add near the top imports:
+Change the entities import line (Task 5 imported only `EmailSummary, MailboxSpec`)
+to add the names `fetch` needs, and import the HTML helper:
 
 ```python
-from ari.domain.email.entities import EmailAttachment
+from ari.domain.email.entities import (EmailAttachment, EmailSummary,
+                                        FetchedEmail, MailboxSpec)
 from ari.infrastructure.email.html_text import html_to_text
 ```
 
@@ -1099,10 +1101,13 @@ Add to `src/ari/application/ari_tools.py`, right after `buscar_correos`:
         return await self._receipt("\n".join(lines))
 
     def _cap_bytes(self, body: str) -> str:
+        # Leave room for the marker so the total fits write_text's own byte cap.
+        marker = "\n… (truncado)"
         encoded = body.encode("utf-8")
         if len(encoded) <= self._TEXT_FILE_CAP:
             return body
-        return encoded[:self._TEXT_FILE_CAP].decode("utf-8", "ignore") + "\n… (truncado)"
+        budget = self._TEXT_FILE_CAP - len(marker.encode("utf-8"))
+        return encoded[:budget].decode("utf-8", "ignore") + marker
 
     def _save_attachments(self, ws, cuenta: str, msg) -> list[str]:
         saved: list[str] = []
