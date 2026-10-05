@@ -53,6 +53,11 @@ class ToolPolicy:
         degraded = self._registry.degraded_for(is_owner)
         lines = ["## Tus herramientas y conexiones",
                  "- 🌐 web: buscar y leer páginas."]
+        ws_line = ("- 🗂️ espacio de trabajo: crear y leer archivos, bases SQLite y "
+                   "leer documentos (PDF, Excel, CSV).")
+        if is_owner:
+            ws_line += " Además puedes ejecutar comandos acotados a tu espacio."
+        lines.append(ws_line)
         lines += [f"- {server_icon(n)} {n}: {d}" for n, d in servers]
         if degraded:
             lines.append("\n### Conexiones degradadas (configuradas pero inactivas)")

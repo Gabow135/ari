@@ -50,6 +50,21 @@ async def test_view_lists_web_and_role_connections():
     assert u.has_web and not u.has_mcp and "google" not in u.text
 
 
+async def test_view_includes_workspace_line():
+    user_view = await _policy().view("7")
+    assert "espacio de trabajo" in user_view.text
+
+
+async def test_view_owner_includes_ejecutar_in_workspace_line():
+    owner_view = await _policy().view("42")
+    assert "ejecutar comandos acotados" in owner_view.text
+
+
+async def test_view_non_owner_does_not_include_ejecutar_in_workspace_line():
+    user_view = await _policy().view("7")
+    assert "ejecutar comandos acotados" not in user_view.text
+
+
 def test_status_text():
     text = _policy().status_text()
     assert "🔌 google — Gmail del creador (dueño) — ✅ configurado" in text

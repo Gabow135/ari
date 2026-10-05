@@ -40,6 +40,13 @@ CAPABILITIES: list[Capability] = [
                 "lo pide («recuerda que…», «olvida…», «¿qué sabes de mí?») con "
                 "recordar_dato, olvidar_dato y ver_datos."),
     Capability(
+        summary="Cada usuario tiene un espacio de trabajo privado donde puedes crear y leer "
+                "archivos, armar bases de datos SQLite y leer documentos. Herramientas: "
+                "escribir_archivo, leer_archivo, listar_archivos, borrar_archivo, consultar_sql "
+                "y leer_documento. Las rutas son relativas a ese espacio y cada usuario solo ve "
+                "el suyo. Para el contenido de un PDF, Excel o CSV usa leer_documento (extrae el "
+                "texto); leer_archivo es solo para texto plano."),
+    Capability(
         owner_only=True,
         summary="Administrar accesos conversando («aprueba a @juan», «revoca a @pedro», "
                 "«¿quién pidió acceso?») con aprobar_acceso, revocar_acceso y ver_accesos."),
@@ -90,6 +97,13 @@ CAPABILITIES: list[Capability] = [
                 "una tarea, inspeccionar archivos o conseguir datos: si te falta algo, pídelo "
                 "con palabras. No le pidas que escriba ningún comando especial."),
     Capability(
+        owner_only=True,
+        summary="Ejecutar comandos directamente en tu espacio de trabajo con ejecutar (sin "
+                "«dale»): corre el comando con el directorio de trabajo en tu espacio privado y "
+                "devuelve código de salida, stdout y stderr. Es distinto de proponer_comando, que "
+                "corre en la máquina del creador y pide «dale». Úsalo para algo acotado a tus "
+                "archivos."),
+    Capability(
         command="aprobar", menu="Aprobar acceso: /aprobar CÓDIGO", owner_only=True,
         summary="Aprobar el acceso de un usuario nuevo con su código.",
         usage="/aprobar CÓDIGO"),
@@ -121,8 +135,8 @@ CAPABILITIES: list[Capability] = [
 ]
 
 # What Ari can NOT do yet — so it never promises it, and can propose how to get it.
-_NO_TOOLS = ("En la conversación no tienes herramientas directas: no puedes navegar la "
-             "web ni leer archivos por tu cuenta en el momento.")
+_NO_TOOLS = ("No puedes navegar la web por tu cuenta en esta conversación "
+             "(no hay herramienta de búsqueda web aquí).")
 _NO_MCP = ("Todavía no tienes conexiones MCP ni integraciones (correo, calendario, "
            "bases de datos, APIs externas). Una conexión nueva solo existe cuando tu creador "
            "la agrega a Ari: autorizar una cuenta en otra app (claude.ai, Google…) NO te da "

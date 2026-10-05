@@ -73,3 +73,30 @@ def test_limitations_adapt_to_tools():
     with_mcp = " ".join(limitations(True, True))
     assert "Todavía no tienes conexiones MCP" not in with_mcp
     assert "Solo tienes las conexiones listadas" in with_mcp
+
+
+def test_workspace_capability_visible_to_all_users():
+    text = render_capabilities(is_owner=False)
+    assert "espacio de trabajo privado" in text
+    assert "leer_documento" in text
+
+
+def test_workspace_ejecutar_only_for_owner():
+    owner_text = render_capabilities(is_owner=True)
+    user_text = render_capabilities(is_owner=False)
+    assert "en tu espacio de trabajo con ejecutar" in owner_text
+    assert "en tu espacio de trabajo con ejecutar" not in user_text
+
+
+def test_no_tools_limitation_no_longer_claims_cant_read_files():
+    no_tools_limitations = " ".join(limitations(has_web=False, has_mcp=False))
+    assert "leer archivos" not in no_tools_limitations
+
+
+def test_menu_commands_unchanged_by_new_capabilities():
+    # Neither new Capability has a command, so menu lists must stay the same.
+    assert [c for c, _ in menu_commands(owner=False)] == ["start", "recordatorios"]
+    owner = [c for c, _ in menu_commands(owner=True)]
+    assert set(owner) == {"start", "recordatorios", "code", "aprobar", "revocar",
+                          "accesos", "conexiones", "vault", "restart", "stop",
+                          "skills", "skill_on", "skill_off"}
