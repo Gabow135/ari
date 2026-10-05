@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from ari.application.ari_tools import Actor, AriTools
-from ari.domain.email.entities import EmailSummary, MailboxSpec
+from ari.domain.email.entities import EmailAttachment, EmailSummary, FetchedEmail, MailboxSpec
 from ari.domain.tools.ari_permissions import CHAT
 from ari.infrastructure.memory.sqlite_memory_adapter import SqliteMemoryAdapter
 from ari.infrastructure.persistence.db import connect
@@ -74,3 +74,55 @@ async def test_buscar_connection_error_is_friendly(env):
     out = await _tools(env, reader=FakeReader(boom=True)).buscar_correos("email_corp")
     assert "no pude conectarme" in out.lower()
     assert "pw" not in out  # never leaks the password
+
+
+
+
+def _msg(body="Total: 1.234 USD", attachments=()):
+    return FetchedEmail("7", "pay@mrjoy.com", "me@corp.com", "Factura",
+                        "5 Oct", body, tuple(attachments))
+
+
+async def test_leer_correo_formats_and_spills_body(env):
+    _conn, workspaces, _ = env
+    reader = FakeReader(message=_msg())
+    out = await _tools(env, reader=reader).leer_correo("email_corp", "7")
+    assert "Asunto: Factura" in out
+    assert "Total: 1.234 USD" in out
+    assert "correos/email_corp-7.txt" in out
+    ws = workspaces.for_user("42")
+    assert "1.234" in ws.read_text("correos/email_corp-7.txt")
+
+
+async def test_leer_correo_saves_attachments(env):
+    _conn, workspaces, _ = env
+    att = EmailAttachment("factura.pdf", "application/pdf", b"%PDF bytes")
+    out = await _tools(env, reader=FakeReader(message=_msg(attachments=[att]))
+                       ).leer_correo("email_corp", "7")
+    assert "correos/adjuntos/email_corp-7/01-factura.pdf" in out
+    ws = workspaces.for_user("42")
+    assert ws.read_bytes("correos/adjuntos/email_corp-7/01-factura.pdf") == b"%PDF bytes"
+
+
+async def test_leer_correo_sanitizes_attachment_name(env):
+    att = EmailAttachment("../../etc/passwd", "text/plain", b"x")
+    out = await _tools(env, reader=FakeReader(message=_msg(attachments=[att]))
+                       ).leer_correo("email_corp", "7")
+    # saved safely inside the per-email folder, never escaping
+    assert "correos/adjuntos/email_corp-7/" in out
+    assert ".." not in out.split("Adjuntos")[-1]
+
+
+async def test_leer_correo_truncates_body_over_text_cap(env):
+    _conn, workspaces, _ = env
+    big = "A" * 1_200_000  # over the 1 MB text cap
+    await _tools(env, reader=FakeReader(message=_msg(body=big))
+                 ).leer_correo("email_corp", "7")
+    ws = workspaces.for_user("42")
+    saved = ws.read_text("correos/email_corp-7.txt")
+    assert "(truncado)" in saved and len(saved.encode("utf-8")) <= 1_048_576 + 50
+
+
+async def test_leer_correo_missing_uid(env):
+    out = await _tools(env, reader=FakeReader(message=None)).leer_correo("email_corp", "999")
+    assert "no encontré el correo" in out.lower()

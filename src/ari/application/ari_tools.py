@@ -339,6 +339,70 @@ class AriTools:
             f"#{s.uid} · {s.from_addr} · {s.subject} · {s.date} · {s.snippet}".rstrip(" ·")
             for s in summaries)
 
+    _BODY_CAP = 8000           # inline preview characters
+    _TEXT_FILE_CAP = 1_048_576  # workspace write_text byte cap
+    _MAX_ATTACHMENTS = 20
+
+    async def leer_correo(self, cuenta: str, id: str) -> str:
+        if not self._allowed("leer_correo"):
+            return DENIED
+        spec, error = self._mailbox(cuenta)
+        if error:
+            return error
+        if self._ws_factory is None:
+            return "El espacio de trabajo no está disponible."
+        try:
+            msg = await asyncio.to_thread(self._email_reader.fetch, spec, str(id))
+        except LookupError:
+            return f"No encontré el correo #{id}."
+        except Exception:  # network/IMAP failure; never leak creds
+            log.exception("leer_correo failed for %s", cuenta)
+            return f"No pude conectarme a la casilla «{cuenta}»."
+        ws = self._ws()
+        body = msg.body_text or "(sin texto en el cuerpo)"
+        preview = (body if len(body) <= self._BODY_CAP
+                   else body[:self._BODY_CAP] + "\n… (truncado; cuerpo completo en el archivo)")
+        lines = [f"De: {msg.from_addr} · Para: {msg.to_addr} · Fecha: {msg.date}",
+                 f"Asunto: {msg.subject}", "", preview]
+        body_rel = f"correos/{cuenta}-{msg.uid}.txt"
+        try:
+            ws.write_text(body_rel, self._cap_bytes(body))
+            lines += ["", f"📄 Cuerpo completo: {body_rel}"]
+        except (ValueError, OSError):
+            log.warning("could not save email body %s", body_rel)
+        saved = self._save_attachments(ws, cuenta, msg)
+        if saved:
+            lines.append("📎 Adjuntos (usá leer_documento sobre cada ruta):")
+            lines += [f"- {path}" for path in saved]
+        return await self._receipt("\n".join(lines))
+
+    def _cap_bytes(self, body: str) -> str:
+        # Leave room for the marker so the total fits write_text's own byte cap.
+        marker = "\n… (truncado)"
+        encoded = body.encode("utf-8")
+        if len(encoded) <= self._TEXT_FILE_CAP:
+            return body
+        budget = self._TEXT_FILE_CAP - len(marker.encode("utf-8"))
+        return encoded[:budget].decode("utf-8", "ignore") + marker
+
+    def _save_attachments(self, ws, cuenta: str, msg) -> list[str]:
+        saved: list[str] = []
+        skipped = 0
+        for index, att in enumerate(msg.attachments[:self._MAX_ATTACHMENTS], start=1):
+            name = _safe_name(att.filename) or f"adjunto-{index}"
+            rel = f"correos/adjuntos/{cuenta}-{msg.uid}/{index:02d}-{name}"
+            try:
+                ws.write_bytes(rel, att.data)
+                saved.append(rel)
+            except (ValueError, OSError):
+                skipped += 1
+        extra = len(msg.attachments) - self._MAX_ATTACHMENTS
+        if extra > 0:
+            skipped += extra
+        if skipped:
+            saved.append(f"(se omitieron {skipped} adjunto(s) por tamaño o cantidad)")
+        return saved
+
     async def consultar_sql(self, base: str, sql: str) -> str:
         if not self._allowed("consultar_sql"):
             return DENIED
