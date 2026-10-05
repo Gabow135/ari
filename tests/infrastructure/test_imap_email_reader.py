@@ -41,3 +41,26 @@ def test_search_returns_newest_first_and_decodes_headers():
     assert out[0].subject == "Factura octubre"
     assert conn.selected == ("INBOX", True)
     assert conn.logged_out is True
+
+
+def test_search_closes_connection_on_login_failure():
+    import imaplib
+
+    class LoginFailConn:
+        def __init__(self):
+            self.logged_out = False
+        def login(self, user, pw):
+            raise imaplib.IMAP4.error("auth failed")
+        def select(self, *a, **k):
+            pass
+        def uid(self, *a):
+            return "OK", [b""]
+        def logout(self):
+            self.logged_out = True
+
+    conn = LoginFailConn()
+    reader = ImapEmailReader(ssl_factory=lambda *a, **k: conn)
+    import pytest
+    with pytest.raises(Exception):
+        reader.search(SPEC, "", 5)
+    assert conn.logged_out is True

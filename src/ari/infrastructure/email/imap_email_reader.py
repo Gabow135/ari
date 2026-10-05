@@ -67,8 +67,13 @@ class ImapEmailReader:
         else:
             conn = self._plain_factory(spec.imap_host, spec.imap_port,
                                        timeout=self._timeout)
-            conn.starttls()
-        conn.login(spec.user, spec.password)
+        try:
+            if not spec.imap_secure:
+                conn.starttls()
+            conn.login(spec.user, spec.password)
+        except BaseException:
+            _logout(conn)
+            raise
         return conn
 
     def search(self, spec: MailboxSpec, criteria: str,
