@@ -26,10 +26,13 @@ async def _get_tools() -> AriTools:
     """Built on the first tool call, so a bare handshake needs no actor env."""
     global _tools
     if _tools is None:
+        from ari.infrastructure.command.shell_runner import ShellRunner
         from ari.infrastructure.email.sqlite_email_accounts import SqliteEmailAccounts
         from ari.infrastructure.persistence.sqlite_email_enroll_requests import (
             SqliteEmailEnrollRequests,
         )
+        from ari.infrastructure.workspace.sqlite_sandbox import SqliteSandbox
+        from ari.infrastructure.workspace.user_workspace import Workspaces
         env = os.environ
         conn = await open_existing(env["ARI_DB_PATH"])
         schedule, access = SqliteScheduleStore(conn), SqliteAccessStore(conn)
@@ -43,6 +46,8 @@ async def _get_tools() -> AriTools:
             await grants.forget_user(user_id)
             await email_accounts.delete_for_user(user_id)
 
+        workspaces = Workspaces(env.get(
+            "ARI_WORKSPACES_DIR", os.path.expanduser("~/.ari/workspaces")))
         _tools = AriTools(
             actor_from_env(env), schedule=schedule,
             memory=SqliteMemoryAdapter(conn, embedding_dim=1),
@@ -57,7 +62,10 @@ async def _get_tools() -> AriTools:
             skills=SkillManager(env.get("ARI_SKILLS_DIR", "./skills"), load=False),
             grants=grants,
             email_accounts=email_accounts,
-            email_enroll=email_enroll)
+            email_enroll=email_enroll,
+            workspaces=workspaces,
+            sql_sandbox=SqliteSandbox(),
+            runner=ShellRunner(timeout=60.0))
     return _tools
 
 

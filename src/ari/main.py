@@ -155,8 +155,10 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
     sealed_box = AriSealedBox(vault)
     email_enroll = SqliteEmailEnrollRequests(conn)
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    workspaces_abs = os.path.abspath(os.path.expanduser(settings.workspaces_dir))
     sensitive = (project_root, settings.vault_path,
-                 os.path.join(project_root, ".env"), os.path.abspath(settings.claude_config_dir))
+                 os.path.join(project_root, ".env"),
+                 os.path.abspath(settings.claude_config_dir), workspaces_abs)
     registry = McpRegistry(settings.mcp_config, ".env",
                            os.path.join(settings.claude_config_dir, "mcp"),
                            vault=vault, sensitive_paths=sensitive)
@@ -167,6 +169,7 @@ async def build(settings: Settings, env: dict | None, tz) -> Components:
         "ARI_MAX_ITEMS": str(settings.max_items_per_user),
         "ARI_OWNER_IDS": ",".join(sorted(settings.owner_id_set)),
         "ARI_SKILLS_DIR": os.path.abspath(settings.skills_dir),
+        "ARI_WORKSPACES_DIR": workspaces_abs,
     })
     turn_config_writer = TurnConfigWriter(os.path.join(settings.claude_config_dir, "mcp"))
     tools = ToolPolicy(registry, Authorizer(settings.owner_id_set).is_owner, ari=ari_spec,

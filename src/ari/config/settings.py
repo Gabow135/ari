@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     # Tools / MCP (3A)
     mcp_config: str = "./mcp/servers.json"
     skills_dir: str = "./skills"
+    # Per-user execution/data workspaces (files + sqlite). Outside the repo.
+    workspaces_dir: str = "~/.ari/workspaces"
     # Generous budget so slow MCP tools finish and Ari replies with the real
     # answer; the backstop only fires if a tool genuinely hangs (TIMEOUT_REPLY).
     chat_timeout_seconds: int = 900
