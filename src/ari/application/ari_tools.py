@@ -799,10 +799,10 @@ class AriTools:
             return "Todavía no puedo responder a grupos, solo chats individuales."
         draft = (instruccion or "").strip()
         if not draft:
-            return "No pude redactar: decime qué responder."
+            return "No pude redactar: dime qué responder."
         did = await self._whatsapp.create_draft(id_int, msg.wa_chat_id, msg.contact_name, draft)
         return (f"Voy a responder a {msg.contact_name}: «{draft}». "
-                f"¿Confirmo? (usá whatsapp_enviar #{did})")
+                f"¿Confirmo? (usa whatsapp_enviar #{did})")
 
     async def whatsapp_enviar(self, borrador_id: int) -> str:
         if not self._allowed("whatsapp_enviar"):

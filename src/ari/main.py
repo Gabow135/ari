@@ -350,8 +350,8 @@ def main() -> None:
             if wa_port.connection_state() != "connected" and settings.whatsapp_number:
                 code = await wa_port.pair_phone(settings.whatsapp_number)
                 for o in owners:
-                    await send(o, f"Vinculá Ari a WhatsApp: Dispositivos vinculados → "
-                                  f"Vincular con número → ingresá: {code}")
+                    await send(o, f"Vincula Ari a WhatsApp: Dispositivos vinculados → "
+                                  f"Vincular con número → ingresa: {code}")
             wa_outbox = WhatsAppOutbox(wa_store, wa_port, send, owners,
                                        min_delay=settings.whatsapp_send_min_delay_seconds)
 

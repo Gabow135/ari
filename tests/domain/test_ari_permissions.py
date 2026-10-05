@@ -22,7 +22,9 @@ def test_catalogue():
                          "buscar_correos", "leer_correo",
                          "escribir_archivo", "leer_archivo", "listar_archivos",
                          "borrar_archivo", "consultar_sql", "ejecutar", "leer_documento",
-                         "abrir_archivo")
+                         "abrir_archivo",
+                         "whatsapp_pendientes", "whatsapp_responder", "whatsapp_enviar",
+                         "whatsapp_filtro")
 
 
 def test_chat_permissions():
