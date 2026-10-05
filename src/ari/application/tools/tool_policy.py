@@ -112,12 +112,15 @@ class ToolPolicy:
         owner = self._is_owner(user_id)
         servers = self._registry.resolved(owner)
         await self._inject_email(servers, user_id)
+        from ari.infrastructure.email.server_spec import (email_accounts_from_servers,
+                                                          mailboxes_to_json)
+        accounts_json = mailboxes_to_json(email_accounts_from_servers(servers))
         servers[ARI_SERVER] = {
             "command": self._ari.command, "args": list(self._ari.args),
             "env": {**self._ari.base_env, "ARI_ACTOR_ID": user_id,
                     "ARI_ACTOR_CHAT": chat_id or user_id, "ARI_ACTOR_NAME": actor_name,
                     "ARI_ROLE": "owner" if owner else "user", "ARI_CONTEXT": context,
-                    "ARI_TURN_ID": turn_id}}
+                    "ARI_TURN_ID": turn_id, "ARI_EMAIL_ACCOUNTS": accounts_json}}
         path = self._writer.write(servers)
         if path is None:  # can't write the config: web only, never a stale file
             yield Turn(Toolset(WEB_TOOLS, WEB_TOOLS), view, turn_id)

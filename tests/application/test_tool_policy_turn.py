@@ -46,7 +46,7 @@ async def test_owner_chat_turn(tmp_path):
         assert servers["ari"]["command"] == "py" and servers["ari"]["args"] == ["-m", "ari.mcp_server"]
         assert env == {"ARI_DB_PATH": "/db", "ARI_ACTOR_ID": "42", "ARI_ACTOR_CHAT": "42",
                        "ARI_ACTOR_NAME": "Gabriel", "ARI_ROLE": "owner", "ARI_CONTEXT": "chat",
-                       "ARI_TURN_ID": turn.turn_id}
+                       "ARI_TURN_ID": turn.turn_id, "ARI_EMAIL_ACCOUNTS": "[]"}
         path = t.mcp_config_path
     import os
     assert not os.path.exists(path)
@@ -90,3 +90,27 @@ async def test_writer_failure_falls_back_to_web_only(tmp_path):
 async def test_no_turn_yields_none():
     async with no_turn() as turn:
         assert turn is None
+
+
+async def test_turn_injects_email_accounts(tmp_path):
+    from ari.infrastructure.email.server_spec import mailboxes_from_json
+    mail = {"email_corp": {"command": "npx", "args": ["-y", "mcp-mail-server@2.1.0"],
+                           "env": {"IMAP_HOST": "imap.corp.com", "IMAP_PORT": "993",
+                                   "IMAP_SECURE": "true", "EMAIL_USER": "me@corp.com",
+                                   "EMAIL_PASS": "s3cret"}}}
+    policy = _policy(tmp_path, mail)
+    async with policy.turn("42", CHAT, "Gabriel", "42") as turn:
+        with open(turn.toolset.mcp_config_path, encoding="utf-8") as f:
+            env = json.load(f)["mcpServers"]["ari"]["env"]
+    boxes = mailboxes_from_json(env["ARI_EMAIL_ACCOUNTS"])
+    assert set(boxes) == {"email_corp"}
+    assert boxes["email_corp"].imap_host == "imap.corp.com"
+    assert boxes["email_corp"].password == "s3cret"
+
+
+async def test_turn_without_mailboxes_has_empty_accounts(tmp_path):
+    policy = _policy(tmp_path, {"google": {"command": "uvx", "args": ["workspace-mcp"]}})
+    async with policy.turn("42", CHAT, "Gabriel", "42") as turn:
+        with open(turn.toolset.mcp_config_path, encoding="utf-8") as f:
+            env = json.load(f)["mcpServers"]["ari"]["env"]
+    assert env["ARI_EMAIL_ACCOUNTS"] == "[]"
