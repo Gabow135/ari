@@ -40,3 +40,10 @@ async def test_statement_timeout(tmp_path):
                "SELECT x FROM c)")
     with pytest.raises(sqlite3.Error):
         await sb.run(db, runaway)
+
+
+async def test_multi_statement_is_denied(tmp_path):
+    db = str(tmp_path / "data.sqlite")
+    sb = SqliteSandbox()
+    with pytest.raises(sqlite3.Error):
+        await sb.run(db, "SELECT 1; SELECT 2")
