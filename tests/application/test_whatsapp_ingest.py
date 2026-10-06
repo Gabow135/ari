@@ -16,10 +16,10 @@ class FakeStore:
         self.notified.append(id)
 
 
-def _ingest(store, sent):
+def _ingest(store, sent, since=0):
     async def notify(chat_id, text):
         sent.append((chat_id, text))
-    return WhatsAppIngest(store, notify, owner_ids=["111", "222"])
+    return WhatsAppIngest(store, notify, owner_ids=["111", "222"], since=since)
 
 
 async def test_passing_message_notifies_every_owner_and_marks_notified():
@@ -43,3 +43,28 @@ async def test_media_only_message_uses_placeholder_body():
     store = FakeStore(WhatsAppFilter(frozenset({"ana"}), frozenset()))
     await _ingest(store, sent)(InboundWhatsApp("5@s.whatsapp.net", "Ana", "", media_kind="image"))
     assert "[image]" in sent[0][1]  # no empty body, no crash
+
+
+async def test_skips_own_outgoing_messages():
+    sent = []
+    store = FakeStore(WhatsAppFilter(frozenset({"juan"}), frozenset()))
+    await _ingest(store, sent)(
+        InboundWhatsApp("5@s.whatsapp.net", "Juan", "hola", is_from_me=True))
+    assert sent == [] and store.recorded == []  # not even stored
+
+
+async def test_skips_history_before_startup():
+    sent = []
+    store = FakeStore(WhatsAppFilter(frozenset({"juan"}), frozenset()))
+    # ts before the since cutoff = history-sync / offline backlog → dropped
+    await _ingest(store, sent, since=1000)(
+        InboundWhatsApp("5@s.whatsapp.net", "Juan", "hola", ts=100))
+    assert sent == [] and store.recorded == []
+
+
+async def test_processes_live_message_after_startup():
+    sent = []
+    store = FakeStore(WhatsAppFilter(frozenset({"juan"}), frozenset()))
+    await _ingest(store, sent, since=1000)(
+        InboundWhatsApp("5@s.whatsapp.net", "Juan", "hola", ts=2000))
+    assert [c for c, _ in sent] == ["111", "222"] and len(store.recorded) == 1

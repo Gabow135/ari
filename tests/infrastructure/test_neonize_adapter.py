@@ -4,7 +4,8 @@ from ari.infrastructure.whatsapp.neonize_adapter import inbound_from_event
 
 
 def _event(conversation="", image=False, pushname="Juan", is_group=False,
-           user="549111", server="s.whatsapp.net", extended_text=None):
+           user="549111", server="s.whatsapp.net", extended_text=None,
+           is_from_me=False, ts=0):
     ext = None
     if extended_text:
         ext = SimpleNamespace(text=extended_text)
@@ -14,8 +15,8 @@ def _event(conversation="", image=False, pushname="Juan", is_group=False,
                           documentMessage=None, stickerMessage=None)
     # Mirrors neonize's proto shape: MessageSource.Chat is a JID (User + Server).
     chat = SimpleNamespace(User=user, Server=server)
-    source = SimpleNamespace(IsGroup=is_group, Chat=chat)
-    info = SimpleNamespace(MessageSource=source, Pushname=pushname)
+    source = SimpleNamespace(IsGroup=is_group, Chat=chat, IsFromMe=is_from_me)
+    info = SimpleNamespace(MessageSource=source, Pushname=pushname, Timestamp=ts)
     return SimpleNamespace(Message=msg, Info=info)
 
 
@@ -52,3 +53,9 @@ def test_unknown_media_and_empty_text():
     """When no media and empty text, both fields should be empty."""
     m = inbound_from_event(_event(conversation="", image=False))
     assert m.media_kind == "" and m.text == ""
+
+
+def test_from_me_and_timestamp_extracted():
+    """is_from_me and the int64 Timestamp propagate to InboundWhatsApp."""
+    m = inbound_from_event(_event(conversation="x", is_from_me=True, ts=1730000000))
+    assert m.is_from_me is True and m.ts == 1730000000

@@ -348,7 +348,8 @@ def main() -> None:
                 await wa_store.reset_sending()
                 wa_port = NeonizeWhatsApp(os.path.expanduser(settings.whatsapp_session_dir))
                 owners = sorted(settings.owner_id_set)
-                ingest = WhatsAppIngest(wa_store, send, owners)
+                ingest = WhatsAppIngest(wa_store, send, owners,
+                                        since=int(_utcnow().timestamp()))
                 await wa_port.start(ingest)
                 if wa_port.connection_state() != "connected" and settings.whatsapp_number:
                     code = await wa_port.pair_phone(settings.whatsapp_number)

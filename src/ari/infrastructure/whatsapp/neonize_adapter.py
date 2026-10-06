@@ -38,6 +38,8 @@ def inbound_from_event(event) -> InboundWhatsApp:
         text=text,
         media_kind=media_kind,
         is_group=bool(getattr(source, "IsGroup", False)),
+        is_from_me=bool(getattr(source, "IsFromMe", False)),
+        ts=int(getattr(info, "Timestamp", 0) or 0),
     )
 
 
