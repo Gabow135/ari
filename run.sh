@@ -30,7 +30,19 @@ if [ "${ARI_SKIP_INSTALL:-0}" != "1" ]; then
   fi
 fi
 
-# 2. Stop any Ari already running from this install. The pattern matches the
+# 2. Ensure libmagic — the native lib neonize's python-magic needs for WhatsApp.
+#    Best-effort and non-fatal: it only matters when WhatsApp is enabled, and a
+#    failure never blocks startup (Ari just runs without WhatsApp, contained).
+if ! .venv/bin/python -c "import magic; magic.Magic()" >/dev/null 2>&1; then
+  if command -v brew >/dev/null 2>&1; then
+    say "installing libmagic (needed for WhatsApp)…"
+    brew install libmagic >/dev/null 2>&1 || true
+  fi
+  .venv/bin/python -c "import magic; magic.Magic()" >/dev/null 2>&1 || say \
+    "WARNING: libmagic not found — WhatsApp stays off until it is installed (macOS: brew install libmagic; Debian/Ubuntu: sudo apt-get install -y libmagic1; Fedora: sudo dnf install -y file-libs)."
+fi
+
+# 3. Stop any Ari already running from this install. The pattern matches the
 #    running bot (`python -m ari.main`), never this script (`bash run.sh`) nor
 #    the pip step above.
 PATTERN='python.* -m ari\.main'
@@ -44,6 +56,6 @@ if pgrep -f "$PATTERN" >/dev/null 2>&1; then
   pkill -9 -f "$PATTERN" 2>/dev/null || true
 fi
 
-# 3. Relaunch Ari in the foreground (replaces this shell).
+# 4. Relaunch Ari in the foreground (replaces this shell).
 say "starting Ari…"
 exec .venv/bin/python -m ari.main "$@"
