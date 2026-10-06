@@ -138,6 +138,17 @@ CAPABILITIES: list[Capability] = [
                 "link seguro en la red local (un solo uso, vence pronto, HTTPS). Sirve "
                 "cualquier archivo MENOS secretos (vault, .env, ~/.ssh, llaves). Úsalo "
                 "cuando tu creador quiera ver/abrir un archivo que está en su Mac."),
+    Capability(
+        owner_only=True,
+        summary="Leer el WhatsApp personal de tu creador y responder los mensajes que él "
+                "indique, siempre con su confirmación antes de enviar. Avisas por Telegram "
+                "cuando llega algo de los contactos o palabras que él puso en el filtro; el "
+                "resto queda guardado y lo consultas cuando lo pide. Solo respondes chats "
+                "individuales, no grupos. Herramientas: whatsapp_pendientes (ver lo que llegó "
+                "sin responder), whatsapp_responder (preparar un borrador para un mensaje), "
+                "whatsapp_enviar (enviar ese borrador una vez que él confirma) y whatsapp_filtro "
+                "(gestionar a quién o qué te avisa: agregar_contacto, quitar_contacto, "
+                "agregar_palabra, quitar_palabra, ver)."),
 ]
 
 # What Ari can NOT do yet — so it never promises it, and can propose how to get it.
