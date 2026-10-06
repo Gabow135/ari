@@ -336,24 +336,30 @@ def main() -> None:
 
         wa_outbox = None
         if settings.whatsapp_enabled:
-            from ari.application.whatsapp.ingest import WhatsAppIngest
-            from ari.application.whatsapp.outbox import WhatsAppOutbox
-            from ari.infrastructure.persistence.sqlite_whatsapp import SqliteWhatsApp
-            from ari.infrastructure.whatsapp.neonize_adapter import NeonizeWhatsApp
+            # Contain WhatsApp startup: a neonize/pairing failure must never take
+            # down the Telegram bot (spec §9). On failure, log + notify and run on.
+            try:
+                from ari.application.whatsapp.ingest import WhatsAppIngest
+                from ari.application.whatsapp.outbox import WhatsAppOutbox
+                from ari.infrastructure.persistence.sqlite_whatsapp import SqliteWhatsApp
+                from ari.infrastructure.whatsapp.neonize_adapter import NeonizeWhatsApp
 
-            wa_store = SqliteWhatsApp(c.conn)
-            await wa_store.reset_sending()
-            wa_port = NeonizeWhatsApp(os.path.expanduser(settings.whatsapp_session_dir))
-            owners = sorted(settings.owner_id_set)
-            ingest = WhatsAppIngest(wa_store, send, owners)
-            await wa_port.start(ingest)
-            if wa_port.connection_state() != "connected" and settings.whatsapp_number:
-                code = await wa_port.pair_phone(settings.whatsapp_number)
-                for o in owners:
-                    await send(o, f"Vincula Ari a WhatsApp: Dispositivos vinculados → "
-                                  f"Vincular con número → ingresa: {code}")
-            wa_outbox = WhatsAppOutbox(wa_store, wa_port, send, owners,
-                                       min_delay=settings.whatsapp_send_min_delay_seconds)
+                wa_store = SqliteWhatsApp(c.conn)
+                await wa_store.reset_sending()
+                wa_port = NeonizeWhatsApp(os.path.expanduser(settings.whatsapp_session_dir))
+                owners = sorted(settings.owner_id_set)
+                ingest = WhatsAppIngest(wa_store, send, owners)
+                await wa_port.start(ingest)
+                if wa_port.connection_state() != "connected" and settings.whatsapp_number:
+                    code = await wa_port.pair_phone(settings.whatsapp_number)
+                    for o in owners:
+                        await send(o, f"Vincula Ari a WhatsApp: Dispositivos vinculados → "
+                                      f"Vincular con número → ingresa: {code}")
+                wa_outbox = WhatsAppOutbox(wa_store, wa_port, send, owners,
+                                           min_delay=settings.whatsapp_send_min_delay_seconds)
+            except Exception:
+                log.exception("WhatsApp startup failed; continuing without it")
+                wa_outbox = None
 
         def spawn(coro) -> None:
             task = asyncio.ensure_future(coro)

@@ -68,7 +68,19 @@ class NeonizeWhatsApp:
         await self._client.send_message(jid, text)
 
     async def pair_phone(self, number: str) -> str:
-        return await self._client.pair_phone(number, show_push_notification=True)
+        # The async client exposes PascalCase PairPhone; show_push_notification
+        # is a required positional. Returns the code to enter in WhatsApp mobile.
+        return await self._client.PairPhone(number, True)
 
     def connection_state(self) -> str:
-        return self._state
+        # Reflect the stored device registration, not the async ConnectedEv flag:
+        # connect() returns before ConnectedEv fires, so an event-based flag races
+        # and would re-pair an already-linked session on every restart.
+        if self._client is None:
+            return "logged_out"
+        try:
+            logged = self._client.is_logged_in
+            logged = logged() if callable(logged) else bool(logged)
+        except Exception:
+            logged = False
+        return "connected" if logged else "logged_out"
