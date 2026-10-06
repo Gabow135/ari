@@ -24,9 +24,16 @@ def inbound_from_event(event) -> InboundWhatsApp:
         if getattr(msg, attr, None):
             media_kind = kind
             break
-    contact = getattr(info, "Pushname", "") or source.chat.split("@", 1)[0]
+    # neonize's wrapper protos are PascalCase; MessageSource.Chat is a JID with
+    # User + Server (e.g. 549111@s.whatsapp.net, groupid@g.us). Build the chat id
+    # from the parts (keeps this pure — no neonize import — for the unit tests).
+    chat = getattr(source, "Chat", None)
+    user = getattr(chat, "User", "") or ""
+    server = getattr(chat, "Server", "") or "s.whatsapp.net"
+    wa_chat_id = f"{user}@{server}" if user else ""
+    contact = getattr(info, "Pushname", "") or user or wa_chat_id.split("@", 1)[0]
     return InboundWhatsApp(
-        wa_chat_id=source.chat,
+        wa_chat_id=wa_chat_id,
         contact_name=contact,
         text=text,
         media_kind=media_kind,

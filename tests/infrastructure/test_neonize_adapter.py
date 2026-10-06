@@ -4,7 +4,7 @@ from ari.infrastructure.whatsapp.neonize_adapter import inbound_from_event
 
 
 def _event(conversation="", image=False, pushname="Juan", is_group=False,
-           chat="549111@s.whatsapp.net", extended_text=None):
+           user="549111", server="s.whatsapp.net", extended_text=None):
     ext = None
     if extended_text:
         ext = SimpleNamespace(text=extended_text)
@@ -12,7 +12,9 @@ def _event(conversation="", image=False, pushname="Juan", is_group=False,
                           imageMessage=SimpleNamespace(caption="") if image else None,
                           audioMessage=None, videoMessage=None,
                           documentMessage=None, stickerMessage=None)
-    source = SimpleNamespace(IsGroup=is_group, chat=chat)
+    # Mirrors neonize's proto shape: MessageSource.Chat is a JID (User + Server).
+    chat = SimpleNamespace(User=user, Server=server)
+    source = SimpleNamespace(IsGroup=is_group, Chat=chat)
     info = SimpleNamespace(MessageSource=source, Pushname=pushname)
     return SimpleNamespace(Message=msg, Info=info)
 
@@ -36,7 +38,7 @@ def test_extended_text_message_fallback():
 
 def test_pushname_empty_fallback():
     """When pushname is empty, use chat number before '@'."""
-    m = inbound_from_event(_event(pushname="", chat="549111@s.whatsapp.net"))
+    m = inbound_from_event(_event(pushname="", user="549111"))
     assert m.contact_name == "549111"
 
 
